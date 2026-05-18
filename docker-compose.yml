@@ -1,0 +1,66 @@
+version: "3.9"
+
+networks:
+  pbx_net:
+    driver: bridge
+
+volumes:
+  mariadb_data:          # Volumen persistente para la base de datos
+
+services:
+
+  # ─── Base de datos ────────────────────────────────────────────────────────
+  db:
+    image: mariadb:11
+    container_name: pbx_db
+    networks: [pbx_net]
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-pbx_root_pass}
+      MYSQL_DATABASE: ${DB_NAME:-asterisk_gui}
+      MYSQL_USER: ${DB_USER:-pbxuser}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-pbx_pass}
+    ports:
+      - "127.0.0.1:3306:3306"   # Solo escucha en localhost del host (no expuesto externamente)
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ─── Backend ──────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: pbx_backend
+    networks: [pbx_net]
+    ports:
+      - "8000:8000"
+    env_file: ./backend/.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # Permite llegar a Asterisk en el host
+    volumes:
+      - /etc/asterisk:/etc/asterisk                           # Lectura/escritura de configs
+      - /var/spool/asterisk:/var/spool/asterisk               # Grabaciones CDR
+      - /var/lib/asterisk/sounds/custom:/var/lib/asterisk/sounds/custom  # Audios custom
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ─── Frontend ─────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: pbx_frontend
+    networks: [pbx_net]
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
