@@ -250,7 +250,8 @@ def gen_extensions(db: Session) -> str:
         trunk = trunks_map.get(route.trunk_id)
         if not trunk:
             continue
-        lines.append(f"exten => {route.pattern},1,NoOp(Salida: {route.name})")
+        pattern = route.pattern if route.pattern.startswith("_") else f"_{route.pattern}"
+        lines.append(f"exten => {pattern},1,NoOp(Salida: {route.name})")
         if route.prefix_remove:
             lines.append(f" same => n,Set(EXTEN=${{EXTEN:{route.prefix_remove}}})")
         if route.prefix_add:
@@ -267,7 +268,7 @@ def gen_extensions(db: Session) -> str:
     lines += [
         "exten => 700,1,Park()",
         "",
-        "exten => *97,1,VoiceMailMain(${{CALLERID(num)}}@default)",
+        "exten => *97,1,VoiceMailMain(${CALLERID(num)}@default)",
         " same => n,Hangup()",
         "",
         "exten => blacklisted,1,Answer()",
@@ -280,11 +281,11 @@ def gen_extensions(db: Session) -> str:
         " same => n,Hangup()",
         "",
         "[from-trunk]",
-        "exten => s,1,NoOp(Llamada entrante de ${{CALLERID(num)}})",
+        "exten => s,1,NoOp(Llamada entrante de ${CALLERID(num)})",
         " same => n,Answer()",
         " same => n,Wait(1)",
-        " same => n,GotoIf($[${{BLACKLIST()}}]?blacklisted,1)",
-        " same => n,Goto(inbound-did,${{EXTEN}},1)",
+        " same => n,GotoIf($[${BLACKLIST()}]?blacklisted,1)",
+        " same => n,Goto(inbound-did,${EXTEN},1)",
         "exten => _X.,1,Goto(s,1)",
         "exten => blacklisted,1,Playback(ss-noservice)",
         " same => n,Hangup()",
