@@ -42,6 +42,8 @@ services:
     ports:
       - "8001:8000"      # 8000 ocupado por nextcore-testing-nginx
     env_file: ./backend/.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - /etc/asterisk:/etc/asterisk                          # Monta configs del host que Asterisk usa
       - /var/spool/asterisk:/var/spool/asterisk
