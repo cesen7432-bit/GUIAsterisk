@@ -154,10 +154,11 @@ def gen_pjsip(db: Session) -> str:
     for t in db.query(Trunk).filter(Trunk.is_active == True).all():
         codecs = [c.strip() for c in (t.codecs or "ulaw,alaw").split(",")]
 
+        context = t.context_in or "from-trunk"
         lines += [
             f"[{t.name}]",
             "type=endpoint",
-            f"context={t.context_in}",
+            f"context={context}",
             "disallow=all",
         ] + [f"allow={c}" for c in codecs] + [
             f"auth={t.name}-auth",
@@ -178,8 +179,10 @@ def gen_pjsip(db: Session) -> str:
             "type=aor",
             "max_contacts=1",
             "remove_existing=yes",
-            f"contact=sip:{t.username}@{t.host}:{t.port}",
         ]
+        # Static contact solo para send/none; receive usa la registración dinámica del gateway
+        if t.registration != "receive":
+            lines.append(f"contact=sip:{t.username}@{t.host}:{t.port}")
         if t.qualify_frequency and t.qualify_frequency > 0:
             lines.append(f"qualify_frequency={t.qualify_frequency}")
         lines.append("")
