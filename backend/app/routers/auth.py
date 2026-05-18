@@ -48,18 +48,23 @@ async def me(current_user: GUIUser = Depends(get_current_user)):
     }
 
 
+class SetupAdminRequest(BaseModel):
+    username: str
+    password: str
+    full_name: str = "Administrador"
+
+
 @router.post("/setup-admin")
-async def setup_admin(db: Session = Depends(get_db)):
-    """Create default admin if no users exist."""
+async def setup_admin(body: SetupAdminRequest, db: Session = Depends(get_db)):
     if db.query(GUIUser).count() > 0:
-        raise HTTPException(status_code=400, detail="Users already exist")
+        raise HTTPException(status_code=400, detail="Ya existen usuarios")
     admin = GUIUser(
-        name="Administrador",
-        email="admin@localhost",
-        password_hash=get_password_hash("admin1234"),
+        name=body.full_name,
+        email=body.username,
+        password_hash=get_password_hash(body.password),
         role="admin",
         is_active=True,
     )
     db.add(admin)
     db.commit()
-    return {"message": "Admin created: admin@localhost / admin1234"}
+    return {"message": f"Admin creado: {body.username}"}
