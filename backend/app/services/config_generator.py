@@ -181,11 +181,12 @@ def gen_pjsip(db: Session) -> str:
             "",
             f"[{t.name}]",
             "type=aor",
-            "max_contacts=1",
-            "remove_existing=yes",
+            # receive → acepta registro dinámico del gateway; otro modo → contacto estático fijo
+            f"max_contacts={'1' if t.registration == 'receive' else '0'}",
         ]
-        # Static contact solo para send/none; receive usa la registración dinámica del gateway
-        if t.registration != "receive":
+        if t.registration == "receive":
+            lines.append("remove_existing=yes")
+        else:
             lines.append(f"contact=sip:{t.username}@{t.host}:{t.port}")
         if t.qualify_frequency and t.qualify_frequency > 0:
             lines.append(f"qualify_frequency={t.qualify_frequency}")
