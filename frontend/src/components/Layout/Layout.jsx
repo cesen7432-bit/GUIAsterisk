@@ -1,16 +1,26 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Outlet } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 import { useWebSocket } from '../../hooks/useWebSocket'
+import api from '../../api/client'
 
 export function Layout() {
   const [amiConnected, setAmiConnected] = useState(false)
 
+  useEffect(() => {
+    const check = () =>
+      api.get('/health')
+        .then(r => setAmiConnected(r.data.ami === true))
+        .catch(() => setAmiConnected(false))
+    check()
+    const interval = setInterval(check, 10000)
+    return () => clearInterval(interval)
+  }, [])
+
   useWebSocket((msg) => {
-    if (msg.source === 'ami' && msg.event?.Event === 'FullyBooted') {
-      setAmiConnected(true)
-    }
+    if (msg.source === 'ami') setAmiConnected(true)
+    if (msg.source === 'ami_disconnected') setAmiConnected(false)
   })
 
   return (
