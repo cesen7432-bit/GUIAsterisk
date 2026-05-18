@@ -83,7 +83,8 @@ async def update_trunk(
     if not trunk:
         raise HTTPException(status_code=404, detail="No encontrado")
     for k, v in body.dict(exclude_none=True).items():
-        setattr(trunk, k, v)
+        if k != 'password' or v:
+            setattr(trunk, k, v)
     db.commit()
     _reload(db)
     return {"ok": True}
