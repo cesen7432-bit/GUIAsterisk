@@ -54,7 +54,7 @@ def gen_pjsip(db: Session) -> str:
         _header("pjsip.conf"),
         "[global]",
         "type=global",
-        "endpoint_identifier_order=ip,username,anonymous",
+        "endpoint_identifier_order=username,ip,anonymous",
         "default_realm=asterisk",
         "",
         "[transport-udp]",
