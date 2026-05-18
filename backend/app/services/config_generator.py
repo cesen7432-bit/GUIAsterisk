@@ -60,7 +60,7 @@ def gen_pjsip(db: Session) -> str:
         "[transport-udp]",
         "type=transport",
         "protocol=udp",
-        f"bind=0.0.0.0:5060",
+        "bind=0.0.0.0:5060",
         f"external_media_address={IP}",
         f"external_signaling_address={IP}",
         "local_net=172.16.0.0/12",
@@ -100,9 +100,23 @@ def gen_pjsip(db: Session) -> str:
                 "ice_support=yes",
                 "rtcp_mux=yes",
                 "rtp_symmetric=yes",
+                "force_rport=yes",
                 "rewrite_contact=yes",
+                "direct_media=no",
                 f"callerid={cid} <{ext.number}>",
                 f"language={ext.language}",
+                "",
+                f"[{ext.number}-auth]",
+                "type=auth",
+                "auth_type=userpass",
+                f"username={ext.number}",
+                f"password={ext.password}",
+                "realm=asterisk",
+                "",
+                f"[{ext.number}]",
+                "type=aor",
+                "max_contacts=1",
+                "remove_existing=yes",
                 "",
             ]
         else:
@@ -117,29 +131,29 @@ def gen_pjsip(db: Session) -> str:
                 "rtp_symmetric=yes",
                 "force_rport=yes",
                 "rewrite_contact=yes",
+                "direct_media=no",
                 f"callerid={cid} <{ext.number}>",
                 f"language={ext.language}",
                 "",
+                f"[{ext.number}-auth]",
+                "type=auth",
+                "auth_type=userpass",
+                f"username={ext.number}",
+                f"password={ext.password}",
+                "realm=asterisk",
+                "",
+                f"[{ext.number}]",
+                "type=aor",
+                "max_contacts=1",
+                "remove_existing=yes",
+                "qualify_frequency=30",
+                "qualify_timeout=3.0",
+                "",
             ]
-
-        lines += [
-            f"[{ext.number}-auth]",
-            "type=auth",
-            "auth_type=userpass",
-            f"username={ext.number}",
-            f"password={ext.password}",
-            "realm=asterisk",
-            "",
-            f"[{ext.number}]",
-            "type=aor",
-            "max_contacts=1",
-            "remove_existing=yes",
-            "qualify_frequency=30",
-            "",
-        ]
 
     for t in db.query(Trunk).filter(Trunk.is_active == True).all():
         codecs = [c.strip() for c in (t.codecs or "ulaw,alaw").split(",")]
+
         lines += [
             f"[{t.name}]",
             "type=endpoint",
@@ -151,7 +165,7 @@ def gen_pjsip(db: Session) -> str:
             "rtp_symmetric=yes",
             "force_rport=yes",
             "rewrite_contact=yes",
-            "direct_media=no",
+            f"direct_media={'yes' if t.direct_media else 'no'}",
             "identify_by=username,ip",
             "",
             f"[{t.name}-auth]",
@@ -165,17 +179,19 @@ def gen_pjsip(db: Session) -> str:
             "max_contacts=1",
             "remove_existing=yes",
             f"contact=sip:{t.username}@{t.host}:{t.port}",
-            "",
         ]
+        if t.qualify_frequency and t.qualify_frequency > 0:
+            lines.append(f"qualify_frequency={t.qualify_frequency}")
+        lines.append("")
 
         if t.registration == "send":
             lines += [
-                f"[{t.name}-reg]",
+                f"[{t.name}-registration]",
                 "type=registration",
                 "transport=transport-udp",
                 f"outbound_auth={t.name}-auth",
-                f"server_uri=sip:{t.host}:{t.port}",
-                f"client_uri=sip:{t.username}@{t.host}:{t.port}",
+                f"server_uri=sip:{t.host}",
+                f"client_uri=sip:{t.username}@{t.host}",
                 "retry_interval=60",
                 "expiration=3600",
                 "",
