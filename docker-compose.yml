@@ -3,7 +3,10 @@ version: "3.9"
 networks:
   pbx_net:
     driver: bridge
-    name: pbx_net      # Nombre fijo para poder conectar el contenedor asterisk externo
+    name: pbx_net
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
 
 volumes:
   mariadb_data:
