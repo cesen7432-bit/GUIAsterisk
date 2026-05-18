@@ -174,6 +174,7 @@ def gen_pjsip(db: Session) -> str:
             "auth_type=userpass",
             f"username={t.username}",
             f"password={t.password}",
+            "realm=asterisk",
             "",
             f"[{t.name}]",
             "type=aor",
