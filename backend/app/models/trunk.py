@@ -15,6 +15,7 @@ class Trunk(Base):
     codecs = Column(String(200), default="ulaw,alaw")
     context_in = Column(String(50), default="from-trunk")
     match_ip = Column(Boolean, default=False)
+    nat_ip = Column(String(200), nullable=True)
     registration = Column(Enum("receive", "send", "none"), default="send")
     qualify_frequency = Column(Integer, default=60)
     direct_media = Column(Boolean, default=False)

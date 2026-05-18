@@ -206,13 +206,19 @@ def gen_pjsip(db: Session) -> str:
             ]
 
         if t.match_ip:
-            lines += [
+            identify = [
                 f"[{t.name}-identify]",
                 "type=identify",
                 f"endpoint={t.name}",
                 f"match={t.host}",
-                "",
             ]
+            # If the gateway is behind NAT its SIP packets arrive from a different
+            # public IP. Add both so Asterisk can identify the endpoint regardless
+            # of which source address the packets carry.
+            if t.nat_ip and t.nat_ip != t.host:
+                identify.append(f"match={t.nat_ip}")
+            identify.append("")
+            lines += identify
 
     return "\n".join(lines)
 

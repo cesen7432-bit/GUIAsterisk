@@ -1,8 +1,10 @@
 import asyncio
+import contextlib
 import logging
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from .database import Base, engine
 from .routers import ari, auth, blacklist, cdr, extensions, followme, ivr
@@ -17,6 +19,20 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 Base.metadata.create_all(bind=engine)
+
+
+def _run_migrations():
+    migrations = [
+        "ALTER TABLE trunks ADD COLUMN nat_ip VARCHAR(200) NULL",
+    ]
+    with engine.connect() as conn:
+        for sql in migrations:
+            with contextlib.suppress(Exception):
+                conn.execute(text(sql))
+                conn.commit()
+
+
+_run_migrations()
 
 app = FastAPI(title="Asterisk GUI Manager", version="1.0.0", docs_url="/api/docs")
 

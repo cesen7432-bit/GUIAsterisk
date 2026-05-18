@@ -18,6 +18,7 @@ class TrunkIn(BaseModel):
     username: str
     password: str
     host: str
+    nat_ip: Optional[str] = None
     port: int = 5060
     codecs: str = "ulaw,alaw"
     context_in: str = "from-trunk"
@@ -31,6 +32,7 @@ class TrunkUpdate(BaseModel):
     username: Optional[str] = None
     password: Optional[str] = None
     host: Optional[str] = None
+    nat_ip: Optional[str] = None
     port: Optional[int] = None
     codecs: Optional[str] = None
     context_in: Optional[str] = None
@@ -51,7 +53,7 @@ async def list_trunks(db: Session = Depends(get_db), _=Depends(get_current_user)
     return [
         {
             "id": t.id, "name": t.name, "username": t.username,
-            "host": t.host, "port": t.port, "codecs": t.codecs,
+            "host": t.host, "nat_ip": t.nat_ip, "port": t.port, "codecs": t.codecs,
             "context_in": t.context_in, "registration": t.registration,
             "qualify_frequency": t.qualify_frequency,
             "direct_media": t.direct_media, "match_ip": t.match_ip,

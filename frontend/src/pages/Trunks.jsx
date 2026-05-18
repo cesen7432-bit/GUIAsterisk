@@ -23,8 +23,11 @@ function TrunkForm({ initial, onSubmit, loading }) {
         <FormField label="Nombre" required>
           <input className="input" {...register('name', { required: true })} placeholder="proveedor_sip" />
         </FormField>
-        <FormField label="Host / IP">
+        <FormField label="Host / IP (WireGuard o SIP directo)">
           <input className="input" {...register('host', { required: true })} placeholder="sip.proveedor.com" />
+        </FormField>
+        <FormField label="IP NAT / pública (opcional)">
+          <input className="input" {...register('nat_ip')} placeholder="190.96.x.x — si el gateway está tras NAT" />
         </FormField>
         <FormField label="Usuario SIP">
           <input className="input" {...register('username')} />
