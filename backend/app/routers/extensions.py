@@ -85,7 +85,8 @@ async def update_extension(
     if not ext:
         raise HTTPException(status_code=404, detail="No encontrada")
     for k, v in body.dict(exclude_none=True).items():
-        setattr(ext, k, v)
+        if k != 'password' or v:
+            setattr(ext, k, v)
     db.commit()
     _reload(db)
     return {"ok": True}
