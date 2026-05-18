@@ -52,7 +52,8 @@ async def list_trunks(db: Session = Depends(get_db), _=Depends(get_current_user)
         {
             "id": t.id, "name": t.name, "username": t.username,
             "host": t.host, "port": t.port, "codecs": t.codecs,
-            "registration": t.registration, "qualify_frequency": t.qualify_frequency,
+            "context_in": t.context_in, "registration": t.registration,
+            "qualify_frequency": t.qualify_frequency,
             "direct_media": t.direct_media, "match_ip": t.match_ip,
         }
         for t in trunks
@@ -106,5 +107,5 @@ async def force_register(trunk_id: int, db: Session = Depends(get_db), _=Depends
     trunk = db.query(Trunk).filter(Trunk.id == trunk_id).first()
     if not trunk:
         raise HTTPException(status_code=404, detail="No encontrado")
-    ami_reload._send(f"pjsip send register {trunk.name}-reg")
+    ami_reload._send(f"pjsip send register {trunk.name}-registration")
     return {"ok": True}
