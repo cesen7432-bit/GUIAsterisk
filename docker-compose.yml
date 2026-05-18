@@ -3,9 +3,10 @@ version: "3.9"
 networks:
   pbx_net:
     driver: bridge
+    name: pbx_net      # Nombre fijo para poder conectar el contenedor asterisk externo
 
 volumes:
-  mariadb_data:          # Volumen persistente para la base de datos
+  mariadb_data:
 
 services:
 
@@ -22,7 +23,7 @@ services:
       MYSQL_USER: ${DB_USER:-pbxuser}
       MYSQL_PASSWORD: ${DB_PASSWORD:-pbx_pass}
     ports:
-      - "127.0.0.1:3306:3306"   # Solo escucha en localhost del host (no expuesto externamente)
+      - "127.0.0.1:3306:3306"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
@@ -39,14 +40,12 @@ services:
     container_name: pbx_backend
     networks: [pbx_net]
     ports:
-      - "8000:8000"
+      - "8001:8000"      # 8000 ocupado por nextcore-testing-nginx
     env_file: ./backend/.env
-    extra_hosts:
-      - "host.docker.internal:host-gateway"   # Permite llegar a Asterisk en el host
     volumes:
-      - /etc/asterisk:/etc/asterisk                           # Lectura/escritura de configs
-      - /var/spool/asterisk:/var/spool/asterisk               # Grabaciones CDR
-      - /var/lib/asterisk/sounds/custom:/var/lib/asterisk/sounds/custom  # Audios custom
+      - /etc/asterisk:/etc/asterisk                          # Monta configs del host que Asterisk usa
+      - /var/spool/asterisk:/var/spool/asterisk
+      - /var/lib/asterisk/sounds/custom:/var/lib/asterisk/sounds/custom
     depends_on:
       db:
         condition: service_healthy
@@ -60,7 +59,7 @@ services:
     container_name: pbx_frontend
     networks: [pbx_net]
     ports:
-      - "3000:80"
+      - "8090:80"        # 3000 ocupado por next-sri-api
     depends_on:
       - backend
     restart: unless-stopped
