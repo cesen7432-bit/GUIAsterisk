@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user, require_admin
 from ..database import get_db
 from ..models.trunk import Trunk
-from ..services.ami_client import ami_client
+from ..services import ami_reload
 from ..services.config_generator import gen_pjsip, _write
 
 router = APIRouter()
@@ -41,9 +41,8 @@ class TrunkUpdate(BaseModel):
 
 
 def _reload(db: Session):
-    import asyncio
     _write("pjsip.conf", gen_pjsip(db))
-    asyncio.create_task(ami_client.reload_module("res_pjsip.so"))
+    ami_reload.reload_pjsip()
 
 
 @router.get("/")
@@ -107,5 +106,5 @@ async def force_register(trunk_id: int, db: Session = Depends(get_db), _=Depends
     trunk = db.query(Trunk).filter(Trunk.id == trunk_id).first()
     if not trunk:
         raise HTTPException(status_code=404, detail="No encontrado")
-    resp = await ami_client.send_action({"Action": "PJSIPRegister", "Registration": f"{trunk.name}-reg"})
-    return resp or {"ok": True}
+    ami_reload._send(f"pjsip send register {trunk.name}-reg")
+    return {"ok": True}

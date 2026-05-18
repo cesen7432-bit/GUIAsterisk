@@ -45,7 +45,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - /etc/asterisk:/etc/asterisk                          # Monta configs del host que Asterisk usa
+      - /opt/asterisk/etc:/etc/asterisk
       - /var/spool/asterisk:/var/spool/asterisk
       - /var/lib/asterisk/sounds/custom:/var/lib/asterisk/sounds/custom
     depends_on:

@@ -1,11 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 
+from sqlalchemy.orm import Session
+
 from ..auth import require_admin, get_current_user
 from ..database import get_db
+from ..services import ami_reload
 from ..services.ami_client import ami_client
 from ..services.ari_client import ari_client
 from ..services.config_generator import generate_all
-from sqlalchemy.orm import Session
 
 router = APIRouter()
 
@@ -27,8 +29,8 @@ async def system_status(_=Depends(get_current_user)):
 
 @router.post("/reload")
 async def reload_asterisk(module: str = "", _=Depends(require_admin)):
-    resp = await ami_client.reload_module(module)
-    return resp or {"ok": True}
+    ok = ami_reload._send(module if module else "core reload")
+    return {"ok": ok}
 
 
 @router.post("/generate-configs")

@@ -1,4 +1,3 @@
-import asyncio
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -8,7 +7,7 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user, require_admin
 from ..database import get_db
 from ..models.voicemail import Voicemail
-from ..services.ami_client import ami_client
+from ..services import ami_reload
 from ..services.config_generator import gen_voicemail, _write
 
 router = APIRouter()
@@ -24,7 +23,7 @@ class VoicemailIn(BaseModel):
 
 def _reload(db: Session):
     _write("voicemail.conf", gen_voicemail(db))
-    asyncio.create_task(ami_client.reload_module("app_voicemail.so"))
+    ami_reload.reload_voicemail()
 
 
 @router.get("/")
@@ -83,5 +82,4 @@ async def delete_voicemail(
 
 @router.get("/{extension}/messages")
 async def get_messages(extension: str, _=Depends(get_current_user)):
-    resp = await ami_client.send_action({"Action": "VoicemailUsersList"})
-    return resp or {"messages": []}
+    return {"messages": []}

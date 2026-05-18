@@ -1,4 +1,3 @@
-import asyncio
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -8,7 +7,7 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user, require_admin
 from ..database import get_db
 from ..models.ivr import IVR, IVROption
-from ..services.ami_client import ami_client
+from ..services import ami_reload
 from ..services.config_generator import gen_extensions, _write
 
 router = APIRouter()
@@ -33,7 +32,7 @@ class IVRIn(BaseModel):
 
 def _reload(db: Session):
     _write("extensions.conf", gen_extensions(db))
-    asyncio.create_task(ami_client.reload_module("pbx_config.so"))
+    ami_reload.reload_dialplan()
 
 
 @router.get("/")

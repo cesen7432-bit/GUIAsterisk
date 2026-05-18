@@ -1,4 +1,3 @@
-import asyncio
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -8,7 +7,7 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user, require_admin, require_supervisor
 from ..database import get_db
 from ..models.queue import Queue, QueueMember
-from ..services.ami_client import ami_client
+from ..services import ami_reload
 from ..services.ari_client import ari_client
 from ..services.config_generator import gen_queues, _write
 
@@ -37,7 +36,7 @@ class QueueIn(BaseModel):
 
 def _reload(db: Session):
     _write("queues.conf", gen_queues(db))
-    asyncio.create_task(ami_client.reload_module("app_queue.so"))
+    ami_reload.reload_queues()
 
 
 @router.get("/")
@@ -131,5 +130,5 @@ async def pause_agent(
     queue_name: str, extension: str, paused: bool = True, reason: str = "",
     _=Depends(require_supervisor)
 ):
-    resp = await ami_client.queue_pause(f"PJSIP/{extension}", queue_name, paused, reason)
-    return resp or {"ok": True}
+    ami_reload._send(f"queue {'pause' if paused else 'unpause'} member PJSIP/{extension} queue {queue_name} reason {reason}")
+    return {"ok": True}

@@ -1,6 +1,3 @@
-import asyncio
-from typing import Optional
-
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -8,7 +5,7 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user, require_admin
 from ..database import get_db
 from ..models.blacklist import Blacklist
-from ..services.ami_client import ami_client
+from ..services import ami_reload
 
 router = APIRouter()
 
@@ -36,10 +33,7 @@ async def add_to_blacklist(
     b = Blacklist(number=body.number, reason=body.reason)
     db.add(b)
     db.commit()
-    # Add to Asterisk DB
-    await ami_client.send_action({
-        "Action": "DBPut", "Family": "blacklist", "Key": body.number, "Val": "1"
-    })
+    ami_reload.blacklist_add(body.number)
     return {"id": b.id}
 
 
@@ -52,7 +46,5 @@ async def remove_from_blacklist(
         raise HTTPException(404, "No encontrado")
     db.delete(b)
     db.commit()
-    await ami_client.send_action({
-        "Action": "DBDel", "Family": "blacklist", "Key": number
-    })
+    ami_reload.blacklist_remove(number)
     return {"ok": True}

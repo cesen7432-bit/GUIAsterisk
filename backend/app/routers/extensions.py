@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user, require_admin
 from ..database import get_db
 from ..models.extension import Extension
-from ..services.ami_client import ami_client
+from ..services import ami_reload
 from ..services.config_generator import gen_pjsip, gen_extensions, _write
 
 router = APIRouter()
@@ -42,11 +42,10 @@ class ExtensionUpdate(BaseModel):
 
 
 def _reload(db: Session):
-    import asyncio
     _write("pjsip.conf", gen_pjsip(db))
     _write("extensions.conf", gen_extensions(db))
-    asyncio.create_task(ami_client.reload_module("res_pjsip.so"))
-    asyncio.create_task(ami_client.reload_module("pbx_config.so"))
+    ami_reload.reload_pjsip()
+    ami_reload.reload_dialplan()
 
 
 @router.get("/")
@@ -113,11 +112,11 @@ async def spy_extension(
     ext = db.query(Extension).filter(Extension.id == ext_id).first()
     if not ext:
         raise HTTPException(status_code=404, detail="No encontrada")
-    resp = await ami_client.spy(f"PJSIP/spy-{ext.number}", f"PJSIP/{ext.number}", mode)
-    return resp or {"Response": "Sent"}
+    ami_reload._send(f"channel spy PJSIP/{ext.number} PJSIP/spy-{ext.number}")
+    return {"Response": "Sent"}
 
 
 @router.post("/{channel_id}/hangup")
 async def hangup_channel(channel_id: str, _=Depends(require_admin)):
-    resp = await ami_client.hangup(channel_id)
-    return resp or {"ok": True}
+    ami_reload._send(f"channel request hangup {channel_id}")
+    return {"ok": True}

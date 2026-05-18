@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     asterisk_config_path: str = "/etc/asterisk"
     recordings_path: str = "/var/spool/asterisk/monitor"
     sounds_path: str = "/var/lib/asterisk/sounds/custom"
+    server_ip: str = "127.0.0.1"
 
     class Config:
         env_file = ".env"
