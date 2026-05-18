@@ -156,9 +156,9 @@ def gen_pjsip(db: Session) -> str:
 
         context = t.context_in or "from-trunk"
         # When match_ip=True the trunk is trusted by IP — no auth challenge for REGISTER/INVITE
-        ip_trusted = bool(t.match_ip)
-        ep_auth = [] if ip_trusted else [f"auth={t.name}-auth"]
-        identify_by = "ip" if ip_trusted else "username,ip"
+        # match_ip=True → gateway confiable por IP, sin auth challenge (REGISTER/INVITE)
+        # pero mantenemos identify_by=username,ip para que el AOR lookup use el From username
+        ep_auth = [] if t.match_ip else [f"auth={t.name}-auth"]
         lines += [
             f"[{t.name}]",
             "type=endpoint",
@@ -170,7 +170,7 @@ def gen_pjsip(db: Session) -> str:
             "force_rport=yes",
             "rewrite_contact=yes",
             f"direct_media={'yes' if t.direct_media else 'no'}",
-            f"identify_by={identify_by}",
+            "identify_by=username,ip",
             "",
             f"[{t.name}-auth]",
             "type=auth",
