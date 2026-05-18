@@ -155,19 +155,22 @@ def gen_pjsip(db: Session) -> str:
         codecs = [c.strip() for c in (t.codecs or "ulaw,alaw").split(",")]
 
         context = t.context_in or "from-trunk"
+        # When match_ip=True the trunk is trusted by IP — no auth challenge for REGISTER/INVITE
+        ip_trusted = bool(t.match_ip)
+        ep_auth = [] if ip_trusted else [f"auth={t.name}-auth"]
+        identify_by = "ip" if ip_trusted else "username,ip"
         lines += [
             f"[{t.name}]",
             "type=endpoint",
             f"context={context}",
             "disallow=all",
-        ] + [f"allow={c}" for c in codecs] + [
-            f"auth={t.name}-auth",
+        ] + [f"allow={c}" for c in codecs] + ep_auth + [
             f"aors={t.name}",
             "rtp_symmetric=yes",
             "force_rport=yes",
             "rewrite_contact=yes",
             f"direct_media={'yes' if t.direct_media else 'no'}",
-            "identify_by=username,ip",
+            f"identify_by={identify_by}",
             "",
             f"[{t.name}-auth]",
             "type=auth",
