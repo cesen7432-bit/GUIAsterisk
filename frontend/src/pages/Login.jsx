@@ -37,10 +37,10 @@ export default function Login() {
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label className="label">Email</label>
+            <label className="label">Usuario</label>
             <input
-              type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-              className="input" placeholder="admin@localhost" required autoFocus
+              type="text" value={email} onChange={(e) => setEmail(e.target.value)}
+              className="input" placeholder="admin" required autoFocus
             />
           </div>
           <div>
