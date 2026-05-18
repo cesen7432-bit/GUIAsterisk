@@ -299,8 +299,9 @@ def gen_extensions(db: Session) -> str:
         " same => n,Answer()",
         " same => n,Wait(1)",
         " same => n,GotoIf($[${BLACKLIST()}]?blacklisted,1)",
-        " same => n,Goto(inbound-did,${EXTEN},1)",
-        "exten => _.,1,Goto(s,1)",
+        " same => n,Goto(inbound-did,${DID},1)",
+        "exten => _.,1,Set(DID=${EXTEN})",
+        " same => n,Goto(s,1)",
         "exten => blacklisted,1,Playback(ss-noservice)",
         " same => n,Hangup()",
         "",
@@ -308,12 +309,12 @@ def gen_extensions(db: Session) -> str:
     ]
 
     for r in db.query(InboundRoute).all():
-        pattern = r.did if r.did else "_X."
+        pattern = r.did if r.did else "_."
         lines.append(f"exten => {pattern},1,NoOp(DID {r.did})")
         lines.append(f" same => n,{_dest(r.destination_type, r.destination_id)}")
         lines.append(f" same => n,Hangup()")
         lines.append("")
-    lines += ["exten => _X.,1,Answer()", " same => n,Hangup()", ""]
+    lines += ["exten => _.,1,Answer()", " same => n,Hangup()", ""]
 
     for ivr in db.query(IVR).all():
         lines.append(f"[ivr-{ivr.id}]")
