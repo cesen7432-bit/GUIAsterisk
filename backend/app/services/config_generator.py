@@ -294,7 +294,7 @@ def gen_extensions(db: Session) -> str:
         " same => n,Wait(1)",
         " same => n,GotoIf($[${BLACKLIST()}]?blacklisted,1)",
         " same => n,Goto(inbound-did,${EXTEN},1)",
-        "exten => _X.,1,Goto(s,1)",
+        "exten => _.,1,Goto(s,1)",
         "exten => blacklisted,1,Playback(ss-noservice)",
         " same => n,Hangup()",
         "",
