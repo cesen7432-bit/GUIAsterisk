@@ -26,15 +26,31 @@ class AMIClient:
             self.reader, self.writer = await asyncio.open_connection(self.host, self.port)
             greeting = await self.reader.readline()
             logger.info(f"AMI: {greeting.decode().strip()}")
-            self.connected = True
-            resp = await self._send_raw(
-                {"Action": "Login", "Username": self.username, "Secret": self.password}
+
+            login_msg = (
+                f"Action: Login\r\n"
+                f"Username: {self.username}\r\n"
+                f"Secret: {self.password}\r\n"
+                f"\r\n"
             )
-            if resp and resp.get("Response") == "Success":
+            self.writer.write(login_msg.encode())
+            await self.writer.drain()
+
+            lines = []
+            while True:
+                line = await asyncio.wait_for(self.reader.readline(), timeout=5.0)
+                decoded = line.decode(errors="replace")
+                if decoded == "\r\n":
+                    break
+                lines.append(decoded)
+
+            response = "".join(lines)
+            if "Response: Success" in response:
                 logger.info("AMI authenticated")
+                self.connected = True
                 asyncio.create_task(self._listen())
             else:
-                logger.error("AMI auth failed")
+                logger.error(f"AMI auth failed: {response.strip()}")
                 self.connected = False
         except Exception as e:
             logger.error(f"AMI connect error: {e}")
