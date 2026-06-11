@@ -8,18 +8,33 @@ import { Table, Td, Tr } from '../components/UI/Table'
 import { Badge } from '../components/UI/Badge'
 import { Modal } from '../components/UI/Modal'
 import { FormField } from '../components/UI/FormField'
+import { ExtensionSelect } from '../components/UI/DestinationIdSelect'
 
 function FMForm({ initial, onSubmit, loading }) {
   const { register, handleSubmit, control } = useForm({
-    defaultValues: initial || { initial_ring_time: 20, strategy: 'sequential', music_on_hold: 'default', destinations: [] }
+    defaultValues: initial || {
+      initial_ring_time: 20, strategy: 'sequential',
+      music_on_hold: 'default', destinations: [],
+    },
   })
   const { fields, append, remove } = useFieldArray({ control, name: 'destinations' })
+
+  const { data: extensions = [] } = useQuery({
+    queryKey: ['extensions'],
+    queryFn: () => api.get('/extensions/').then(r => r.data),
+    staleTime: 60000,
+  })
+  const extListId = 'ext-datalist'
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
       <div className="grid grid-cols-2 gap-4">
         <FormField label="Extensión base" required>
-          <input className="input" {...register('extension', { required: !initial })} readOnly={!!initial} placeholder="100" />
+          {initial ? (
+            <input className="input bg-gray-50" readOnly value={initial.extension} {...register('extension')} />
+          ) : (
+            <ExtensionSelect register={register} name="extension" placeholder="— seleccionar extensión —" />
+          )}
         </FormField>
         <FormField label="Tiempo ring principal (s)">
           <input className="input" type="number" {...register('initial_ring_time')} />
@@ -34,6 +49,7 @@ function FMForm({ initial, onSubmit, loading }) {
           <input className="input" {...register('music_on_hold')} />
         </FormField>
       </div>
+
       <div className="flex gap-6">
         <label className="flex items-center gap-2 cursor-pointer text-sm">
           <input type="checkbox" {...register('is_active')} className="rounded" />
@@ -44,17 +60,35 @@ function FMForm({ initial, onSubmit, loading }) {
           Confirmar llamada
         </label>
       </div>
+
       <div>
         <div className="flex items-center justify-between mb-2">
           <label className="label mb-0">Destinos secundarios</label>
-          <button type="button" className="btn-secondary text-xs py-1" onClick={() => append({ number: '', timeout: 20, order: fields.length + 1 })}>
+          <button
+            type="button"
+            className="btn-secondary text-xs py-1"
+            onClick={() => append({ number: '', timeout: 20, order: fields.length + 1 })}
+          >
             <Plus size={12} /> Agregar
           </button>
         </div>
+
+        {/* datalist para autocompletar con extensiones */}
+        <datalist id={extListId}>
+          {extensions.map(e => (
+            <option key={e.number} value={e.number}>{e.number} – {e.name}</option>
+          ))}
+        </datalist>
+
         <div className="space-y-2">
           {fields.map((f, i) => (
             <div key={f.id} className="grid grid-cols-12 gap-2 items-center">
-              <input className="input col-span-6" {...register(`destinations.${i}.number`)} placeholder="Número o extensión" />
+              <input
+                className="input col-span-6"
+                list={extListId}
+                {...register(`destinations.${i}.number`)}
+                placeholder="Extensión o número externo"
+              />
               <input className="input col-span-3" type="number" {...register(`destinations.${i}.timeout`)} placeholder="Timeout" />
               <input className="input col-span-2" type="number" {...register(`destinations.${i}.order`)} placeholder="Orden" />
               <button type="button" onClick={() => remove(i)} className="col-span-1 p-1.5 text-red-500 hover:bg-red-50 rounded">
@@ -64,8 +98,11 @@ function FMForm({ initial, onSubmit, loading }) {
           ))}
         </div>
       </div>
+
       <div className="flex justify-end pt-2">
-        <button type="submit" className="btn-primary" disabled={loading}>{loading ? 'Guardando...' : 'Guardar'}</button>
+        <button type="submit" className="btn-primary" disabled={loading}>
+          {loading ? 'Guardando...' : 'Guardar'}
+        </button>
       </div>
     </form>
   )
@@ -108,7 +145,9 @@ export default function FollowMe() {
           <h1 className="text-2xl font-bold text-gray-900">Sígueme (Follow Me)</h1>
           <p className="text-gray-500 text-sm">{fms.length} configuraciones</p>
         </div>
-        <button className="btn-primary" onClick={() => setModal('create')}><Plus size={16} /> Nuevo</button>
+        <button className="btn-primary" onClick={() => setModal('create')}>
+          <Plus size={16} /> Nuevo
+        </button>
       </div>
 
       <Table headers={['Extensión', 'Estado', 'Estrategia', 'Destinos', 'Acciones']} loading={isLoading}>
@@ -120,8 +159,12 @@ export default function FollowMe() {
             <Td>{fm.destinations_count} destinos</Td>
             <Td>
               <div className="flex gap-2">
-                <button onClick={() => loadFm(fm)} className="p-1.5 rounded hover:bg-blue-50 text-blue-600"><Edit2 size={14} /></button>
-                <button onClick={() => { if (confirm('¿Eliminar?')) deleteMut.mutate(fm.id) }} className="p-1.5 rounded hover:bg-red-50 text-red-500"><Trash2 size={14} /></button>
+                <button onClick={() => loadFm(fm)} className="p-1.5 rounded hover:bg-blue-50 text-blue-600">
+                  <Edit2 size={14} />
+                </button>
+                <button onClick={() => { if (confirm('¿Eliminar?')) deleteMut.mutate(fm.id) }} className="p-1.5 rounded hover:bg-red-50 text-red-500">
+                  <Trash2 size={14} />
+                </button>
               </div>
             </Td>
           </Tr>
@@ -132,7 +175,13 @@ export default function FollowMe() {
         <FMForm onSubmit={(d) => createMut.mutate(d)} loading={createMut.isPending} />
       </Modal>
       <Modal open={!!modal?.edit} onClose={() => setModal(null)} title={`Editar Follow Me: ${modal?.edit?.extension}`} size="lg">
-        {modal?.edit && <FMForm initial={modal.edit} onSubmit={(d) => updateMut.mutate({ id: modal.edit.id, data: d })} loading={updateMut.isPending} />}
+        {modal?.edit && (
+          <FMForm
+            initial={modal.edit}
+            onSubmit={(d) => updateMut.mutate({ id: modal.edit.id, data: d })}
+            loading={updateMut.isPending}
+          />
+        )}
       </Modal>
     </div>
   )

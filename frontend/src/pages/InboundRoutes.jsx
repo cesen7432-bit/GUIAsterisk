@@ -8,31 +8,47 @@ import { Table, Td, Tr } from '../components/UI/Table'
 import { Badge } from '../components/UI/Badge'
 import { Modal } from '../components/UI/Modal'
 import { FormField } from '../components/UI/FormField'
+import { DestinationIdSelect } from '../components/UI/DestinationIdSelect'
 
-const DEST_TYPES = ['extension','queue','ivr','voicemail','hangup']
+const DEST_TYPES = [
+  { value: 'extension', label: 'Extensión' },
+  { value: 'queue',     label: 'Cola' },
+  { value: 'ivr',      label: 'IVR' },
+  { value: 'voicemail', label: 'Buzón de voz' },
+  { value: 'hangup',   label: 'Colgar' },
+]
 
 function RouteForm({ initial, onSubmit, loading }) {
-  const { register, handleSubmit } = useForm({ defaultValues: initial || { destination_type: 'extension' } })
+  const { register, handleSubmit, control } = useForm({
+    defaultValues: initial || { destination_type: 'extension' },
+  })
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
         <FormField label="DID (vacío = cualquier número)">
-          <input className="input" {...register('did')} placeholder="5551234567" />
+          <input className="input" {...register('did')} placeholder="5551234567 o TRONCAL" />
         </FormField>
         <FormField label="CallerID (vacío = cualquier)">
           <input className="input" {...register('callerid')} />
         </FormField>
         <FormField label="Tipo de destino" required>
           <select className="input" {...register('destination_type')}>
-            {DEST_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            {DEST_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
         </FormField>
-        <FormField label="ID de destino">
-          <input className="input" {...register('destination_id')} placeholder="100, soporte, 1..." />
+        <FormField label="Destino">
+          <DestinationIdSelect
+            register={register}
+            control={control}
+            typeName="destination_type"
+            idName="destination_id"
+          />
         </FormField>
       </div>
       <div className="flex justify-end gap-3 pt-2">
-        <button type="submit" className="btn-primary" disabled={loading}>{loading ? 'Guardando...' : 'Guardar'}</button>
+        <button type="submit" className="btn-primary" disabled={loading}>
+          {loading ? 'Guardando...' : 'Guardar'}
+        </button>
       </div>
     </form>
   )
@@ -70,7 +86,9 @@ export default function InboundRoutes() {
           <h1 className="text-2xl font-bold text-gray-900">Rutas de Entrada</h1>
           <p className="text-gray-500 text-sm">{routes.length} rutas configuradas</p>
         </div>
-        <button className="btn-primary" onClick={() => setModal('create')}><Plus size={16} /> Nueva ruta</button>
+        <button className="btn-primary" onClick={() => setModal('create')}>
+          <Plus size={16} /> Nueva ruta
+        </button>
       </div>
 
       <Table headers={['DID', 'CallerID', 'Destino', 'ID destino', 'Acciones']} loading={isLoading}>
@@ -82,8 +100,12 @@ export default function InboundRoutes() {
             <Td><span className="font-mono text-sm">{r.destination_id}</span></Td>
             <Td>
               <div className="flex gap-2">
-                <button onClick={() => setModal({ edit: r })} className="p-1.5 rounded hover:bg-blue-50 text-blue-600"><Edit2 size={14} /></button>
-                <button onClick={() => { if (confirm('¿Eliminar?')) deleteMut.mutate(r.id) }} className="p-1.5 rounded hover:bg-red-50 text-red-500"><Trash2 size={14} /></button>
+                <button onClick={() => setModal({ edit: r })} className="p-1.5 rounded hover:bg-blue-50 text-blue-600">
+                  <Edit2 size={14} />
+                </button>
+                <button onClick={() => { if (confirm('¿Eliminar?')) deleteMut.mutate(r.id) }} className="p-1.5 rounded hover:bg-red-50 text-red-500">
+                  <Trash2 size={14} />
+                </button>
               </div>
             </Td>
           </Tr>
@@ -94,7 +116,13 @@ export default function InboundRoutes() {
         <RouteForm onSubmit={(d) => createMut.mutate(d)} loading={createMut.isPending} />
       </Modal>
       <Modal open={!!modal?.edit} onClose={() => setModal(null)} title="Editar ruta de entrada">
-        {modal?.edit && <RouteForm initial={modal.edit} onSubmit={(d) => updateMut.mutate({ id: modal.edit.id, data: d })} loading={updateMut.isPending} />}
+        {modal?.edit && (
+          <RouteForm
+            initial={modal.edit}
+            onSubmit={(d) => updateMut.mutate({ id: modal.edit.id, data: d })}
+            loading={updateMut.isPending}
+          />
+        )}
       </Modal>
     </div>
   )

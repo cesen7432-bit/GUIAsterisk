@@ -7,13 +7,23 @@ import api from '../api/client'
 import { Table, Td, Tr } from '../components/UI/Table'
 import { Modal } from '../components/UI/Modal'
 import { FormField } from '../components/UI/FormField'
+import { DestinationIdSelect, SoundSelect } from '../components/UI/DestinationIdSelect'
 
-const DEST_TYPES = ['extension', 'queue', 'ivr', 'voicemail', 'hangup']
+const DEST_TYPES = [
+  { value: 'extension', label: 'Extensión' },
+  { value: 'queue',     label: 'Cola' },
+  { value: 'ivr',      label: 'IVR' },
+  { value: 'voicemail', label: 'Buzón de voz' },
+  { value: 'hangup',   label: 'Colgar' },
+]
 const KEYS = ['0','1','2','3','4','5','6','7','8','9','*','#']
 
 function IVRForm({ initial, onSubmit, loading }) {
   const { register, handleSubmit, control } = useForm({
-    defaultValues: initial || { timeout: 10, max_attempts: 3, invalid_action: 'repeat', timeout_action: 'repeat', options: [] }
+    defaultValues: initial || {
+      timeout: 10, max_attempts: 3,
+      invalid_action: 'repeat', timeout_action: 'repeat', options: [],
+    },
   })
   const { fields, append, remove } = useFieldArray({ control, name: 'options' })
 
@@ -24,7 +34,7 @@ function IVRForm({ initial, onSubmit, loading }) {
           <input className="input" {...register('name', { required: true })} placeholder="IVR Principal" />
         </FormField>
         <FormField label="Audio de bienvenida">
-          <input className="input" {...register('welcome_audio')} placeholder="welcome" />
+          <SoundSelect register={register} name="welcome_audio" />
         </FormField>
         <FormField label="Timeout (s)">
           <input className="input" type="number" {...register('timeout')} />
@@ -49,7 +59,11 @@ function IVRForm({ initial, onSubmit, loading }) {
       <div>
         <div className="flex items-center justify-between mb-2">
           <label className="label mb-0">Opciones DTMF</label>
-          <button type="button" className="btn-secondary text-xs py-1" onClick={() => append({ key: '1', destination_type: 'extension', destination_id: '' })}>
+          <button
+            type="button"
+            className="btn-secondary text-xs py-1"
+            onClick={() => append({ key: '1', destination_type: 'extension', destination_id: '' })}
+          >
             <Plus size={12} /> Agregar opción
           </button>
         </div>
@@ -60,9 +74,15 @@ function IVRForm({ initial, onSubmit, loading }) {
                 {KEYS.map(k => <option key={k} value={k}>{k}</option>)}
               </select>
               <select className="input col-span-3" {...register(`options.${i}.destination_type`)}>
-                {DEST_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                {DEST_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
-              <input className="input col-span-6" {...register(`options.${i}.destination_id`)} placeholder="ID destino (ej: 100, soporte, 1)" />
+              <DestinationIdSelect
+                register={register}
+                control={control}
+                typeName={`options.${i}.destination_type`}
+                idName={`options.${i}.destination_id`}
+                className="col-span-6"
+              />
               <button type="button" onClick={() => remove(i)} className="col-span-1 p-1.5 text-red-500 hover:bg-red-50 rounded">
                 <Trash2 size={14} />
               </button>
@@ -72,7 +92,9 @@ function IVRForm({ initial, onSubmit, loading }) {
       </div>
 
       <div className="flex justify-end pt-2">
-        <button type="submit" className="btn-primary" disabled={loading}>{loading ? 'Guardando...' : 'Guardar'}</button>
+        <button type="submit" className="btn-primary" disabled={loading}>
+          {loading ? 'Guardando...' : 'Guardar'}
+        </button>
       </div>
     </form>
   )
@@ -115,7 +137,9 @@ export default function IVR() {
           <h1 className="text-2xl font-bold text-gray-900">IVR (Menú de opciones)</h1>
           <p className="text-gray-500 text-sm">{ivrs.length} IVRs configurados</p>
         </div>
-        <button className="btn-primary" onClick={() => setModal('create')}><Plus size={16} /> Nuevo IVR</button>
+        <button className="btn-primary" onClick={() => setModal('create')}>
+          <Plus size={16} /> Nuevo IVR
+        </button>
       </div>
 
       <Table headers={['Nombre', 'Audio', 'Timeout', 'Opciones', 'Acciones']} loading={isLoading}>
@@ -127,8 +151,12 @@ export default function IVR() {
             <Td>{ivr.options_count} opciones</Td>
             <Td>
               <div className="flex gap-2">
-                <button onClick={() => loadIvr(ivr)} className="p-1.5 rounded hover:bg-blue-50 text-blue-600"><Edit2 size={14} /></button>
-                <button onClick={() => { if (confirm('¿Eliminar?')) deleteMut.mutate(ivr.id) }} className="p-1.5 rounded hover:bg-red-50 text-red-500"><Trash2 size={14} /></button>
+                <button onClick={() => loadIvr(ivr)} className="p-1.5 rounded hover:bg-blue-50 text-blue-600">
+                  <Edit2 size={14} />
+                </button>
+                <button onClick={() => { if (confirm('¿Eliminar?')) deleteMut.mutate(ivr.id) }} className="p-1.5 rounded hover:bg-red-50 text-red-500">
+                  <Trash2 size={14} />
+                </button>
               </div>
             </Td>
           </Tr>
@@ -139,7 +167,13 @@ export default function IVR() {
         <IVRForm onSubmit={(d) => createMut.mutate(d)} loading={createMut.isPending} />
       </Modal>
       <Modal open={!!modal?.edit} onClose={() => setModal(null)} title={`Editar IVR: ${modal?.edit?.name}`} size="lg">
-        {modal?.edit && <IVRForm initial={modal.edit} onSubmit={(d) => updateMut.mutate({ id: modal.edit.id, data: d })} loading={updateMut.isPending} />}
+        {modal?.edit && (
+          <IVRForm
+            initial={modal.edit}
+            onSubmit={(d) => updateMut.mutate({ id: modal.edit.id, data: d })}
+            loading={updateMut.isPending}
+          />
+        )}
       </Modal>
     </div>
   )
