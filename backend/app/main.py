@@ -58,6 +58,39 @@ def _seed_admin():
 
 _seed_admin()
 
+
+def _init_asterisk_conf():
+    import os
+    from .config import settings
+    path = os.path.join(settings.asterisk_config_path, "asterisk.conf")
+    if os.path.exists(path):
+        return
+    content = """; asterisk.conf — creado automáticamente por Asterisk GUI Manager
+
+[directories]
+astetcdir => /etc/asterisk
+astmoddir => /usr/lib/asterisk/modules
+astvarlibdir => /var/lib/asterisk
+astdbdir => /var/lib/asterisk
+astkeydir => /var/lib/asterisk
+astdatadir => /var/lib/asterisk
+astagidir => /var/lib/asterisk/agi-bin
+astspooldir => /var/spool/asterisk
+astrundir => /var/run/asterisk
+astlogdir => /var/log/asterisk
+
+[options]
+verbose = 3
+debug = 0
+nocolor = yes
+"""
+    with open(path, "w") as f:
+        f.write(content)
+    logger.info("asterisk.conf creado")
+
+
+_init_asterisk_conf()
+
 app = FastAPI(title="Asterisk GUI Manager", version="1.0.0", docs_url="/api/docs")
 
 app.add_middleware(
