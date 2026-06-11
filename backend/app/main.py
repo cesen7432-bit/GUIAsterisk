@@ -91,6 +91,33 @@ nocolor = yes
 
 _init_asterisk_conf()
 
+
+def _init_manager_conf():
+    import os
+    from .config import settings
+    path = os.path.join(settings.asterisk_config_path, "manager.conf")
+    if os.path.exists(path):
+        return
+    content = f"""; manager.conf — creado automáticamente por Asterisk GUI Manager
+
+[general]
+enabled = yes
+port = 5038
+bindaddr = 0.0.0.0
+
+[{settings.ami_user}]
+secret = {settings.ami_password}
+read = all
+write = all
+writetimeout = 5000
+"""
+    with open(path, "w") as f:
+        f.write(content)
+    logger.info("manager.conf creado")
+
+
+_init_manager_conf()
+
 app = FastAPI(title="Asterisk GUI Manager", version="1.0.0", docs_url="/api/docs")
 
 app.add_middleware(
