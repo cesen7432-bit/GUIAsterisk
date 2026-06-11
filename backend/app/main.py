@@ -34,6 +34,30 @@ def _run_migrations():
 
 _run_migrations()
 
+
+def _seed_admin():
+    from .auth import get_password_hash
+    from .config import settings
+    from .database import SessionLocal
+    from .models.user import GUIUser
+    db = SessionLocal()
+    try:
+        if not db.query(GUIUser).filter(GUIUser.role == "admin").first():
+            db.add(GUIUser(
+                name="Admin",
+                email=settings.admin_email,
+                password_hash=get_password_hash(settings.admin_password),
+                role="admin",
+                is_active=True,
+            ))
+            db.commit()
+            logger.info(f"Admin creado: {settings.admin_email}")
+    finally:
+        db.close()
+
+
+_seed_admin()
+
 app = FastAPI(title="Asterisk GUI Manager", version="1.0.0", docs_url="/api/docs")
 
 app.add_middleware(

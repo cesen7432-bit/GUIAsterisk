@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     ari_user: str = "asterisk"
     ari_password: str = "asterisk"
 
+    admin_email: str = "admin@pbx.local"
+    admin_password: str = "admin1234"
+
     asterisk_config_path: str = "/etc/asterisk"
     recordings_path: str = "/var/spool/asterisk/monitor"
     sounds_path: str = "/var/lib/asterisk/sounds/custom"
