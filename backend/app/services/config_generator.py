@@ -234,6 +234,12 @@ def gen_extensions(db: Session) -> str:
         "ATTENDED_TRANSFER_COMPLETE_SOUND=beep",
         "",
         "[from-internal]",
+        "; --- Normalización: +593[X]XXXXXX / +593-[X]XXXXXX → 0XXXXXXXXX ---",
+        "exten => _+593X.,1,Set(EXTEN=0${FILTER(0-9,${EXTEN:4})})",
+        " same => n,Goto(from-internal,${EXTEN},1)",
+        "exten => _593X.,1,Set(EXTEN=0${EXTEN:3})",
+        " same => n,Goto(from-internal,${EXTEN},1)",
+        "",
     ]
 
     trunks_map = {t.id: t for t in db.query(Trunk).all()}
