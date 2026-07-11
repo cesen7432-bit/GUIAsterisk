@@ -260,6 +260,72 @@ docker exec asterisk asterisk -rx "manager show connected"
 
 ---
 
+## Voice Agent — Configuración requerida en Asterisk
+
+Para que el agente de voz IA funcione, Asterisk necesita ARI habilitado con una app registrada.
+
+### /opt/asterisk/etc/http.conf
+
+```ini
+[general]
+enabled=yes
+bindaddr=0.0.0.0
+bindport=8088
+```
+
+### /opt/asterisk/etc/ari.conf
+
+```ini
+[general]
+enabled=yes
+pretty=yes
+
+[ariuser]
+type=user
+password=tu_ari_password
+read_only=no
+```
+
+### /opt/asterisk/etc/extensions.conf — contexto de stasis
+
+```ini
+[llamadas-ia]
+exten => _X.,1,NoOp(Llamada IA saliente a ${EXTEN})
+ same => n,Stasis(voice-agent,outbound)
+ same => n,Hangup()
+```
+
+Luego en `pjsip.conf`, la troncal saliente debe apuntar a `context=llamadas-ia`.
+
+Después de editar los archivos:
+```bash
+docker exec asterisk asterisk -rx "core reload"
+```
+
+### Crear el .env del voice-agent en el servidor
+
+```bash
+cp voice-agent/.env.example voice-agent/.env
+nano voice-agent/.env   # completar OPENAI_API_KEY, DB_PASSWORD, ARI_PASSWORD
+```
+
+### Reconstruir e iniciar el voice-agent
+
+```bash
+docker compose build --no-cache voice-agent
+docker compose up -d voice-agent
+docker compose logs -f voice-agent
+```
+
+### Verificar conectividad ARI desde el voice-agent
+
+```bash
+docker exec pbx_voice_agent python3 -c \
+  "import socket; s=socket.create_connection(('host.docker.internal',8088),2); print('ARI alcanzable'); s.close()"
+```
+
+---
+
 ## Solución de problemas
 
 | Síntoma | Causa probable | Solución |

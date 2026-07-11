@@ -3,6 +3,7 @@ import {
   LayoutDashboard, Phone, PhoneCall, PhoneIncoming, PhoneOutgoing,
   Layers, Users, GitBranch, Voicemail, Mic, FileText, Ban,
   Calendar, Volume2, Settings, Shield, Activity, Radio, PhoneForwarded,
+  Bot, ScrollText,
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -17,6 +18,9 @@ const menu = [
   { label: 'IVR',           path: '/ivr',             icon: Layers },
   { label: 'Sígueme',       path: '/followme',        icon: PhoneForwarded },
   { label: 'Colas',         path: '/queues',          icon: Users },
+  { section: 'Voz IA' },
+  { label: 'Plantillas',    path: '/voice/templates', icon: ScrollText },
+  { label: 'Campañas',      path: '/voice/campaigns', icon: Bot },
   { section: 'Registros' },
   { label: 'CDR',           path: '/cdr',             icon: FileText },
   { label: 'Grabaciones',   path: '/recordings',      icon: Mic },

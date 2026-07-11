@@ -21,6 +21,8 @@ import SystemConfig from './pages/SystemConfig'
 import GUIUsers from './pages/GUIUsers'
 import Monitor from './pages/Monitor'
 import ARIUsers from './pages/ARIUsers'
+import VoiceTemplates from './pages/VoiceTemplates'
+import VoiceCampaigns from './pages/VoiceCampaigns'
 
 function RequireAuth({ children }) {
   const { token } = useAuthStore()
@@ -65,6 +67,8 @@ export default function App() {
           <Route path="system" element={<SystemConfig />} />
           <Route path="users" element={<GUIUsers />} />
           <Route path="ari" element={<ARIUsers />} />
+          <Route path="voice/templates" element={<VoiceTemplates />} />
+          <Route path="voice/campaigns" element={<VoiceCampaigns />} />
         </Route>
       </Routes>
     </BrowserRouter>

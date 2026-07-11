@@ -7,6 +7,7 @@ networks:
     ipam:
       config:
         - subnet: 10.10.10.0/24
+          gateway: 10.10.10.1
 
 volumes:
   mariadb_data:
@@ -51,6 +52,26 @@ services:
       - /opt/asterisk/etc:/etc/asterisk
       - /var/spool/asterisk:/var/spool/asterisk
       - /var/lib/asterisk/sounds/custom:/var/lib/asterisk/sounds/custom
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ─── Voice Agent ──────────────────────────────────────────────────────────
+  voice-agent:
+    build:
+      context: ./voice-agent
+      dockerfile: Dockerfile
+    container_name: pbx_voice_agent
+    networks:
+      pbx_net:
+        ipv4_address: 10.10.10.20   # IP fija: Asterisk envía RTP a esta IP
+    ports:
+      - "8100:8100"                   # health/API interna
+      - "10000-10100:10000-10100/udp" # puertos RTP (uno por llamada simultánea)
+    env_file: ./voice-agent/.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       db:
         condition: service_healthy

@@ -10,7 +10,7 @@ from .database import Base, engine
 from .routers import ari, auth, blacklist, cdr, extensions, followme, ivr
 from .routers import monitor, queues, recordings, routes, schedules, sounds
 from .routers import system, users, voicemail
-from .routers import trunks
+from .routers import trunks, campaigns
 from .services.ami_client import ami_client
 from .services.ari_client import ari_client
 from .services.websocket_manager import ws_manager
@@ -24,6 +24,54 @@ Base.metadata.create_all(bind=engine)
 def _run_migrations():
     migrations = [
         "ALTER TABLE trunks ADD COLUMN nat_ip VARCHAR(200) NULL",
+        """CREATE TABLE IF NOT EXISTS voice_templates (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(200) NOT NULL,
+            system_prompt TEXT NOT NULL,
+            first_message TEXT NOT NULL,
+            voice VARCHAR(50) DEFAULT 'alloy',
+            vad_threshold FLOAT DEFAULT 0.6,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )""",
+        """CREATE TABLE IF NOT EXISTS voice_campaigns (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(200) NOT NULL,
+            template_id INT NOT NULL,
+            status ENUM('draft','active','paused','finished') DEFAULT 'draft',
+            max_concurrent INT DEFAULT 4,
+            schedule_start TIME DEFAULT '09:00:00',
+            schedule_end TIME DEFAULT '18:00:00',
+            max_retries INT DEFAULT 3,
+            retry_delay_minutes INT DEFAULT 120,
+            trunk VARCHAR(50) DEFAULT 'openvox',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )""",
+        """CREATE TABLE IF NOT EXISTS voice_contacts (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            campaign_id INT NOT NULL,
+            phone VARCHAR(30) NOT NULL,
+            variables JSON NOT NULL,
+            status ENUM('pending','calling','completed','voicemail','no_answer','failed') DEFAULT 'pending',
+            attempts INT DEFAULT 0,
+            next_attempt_at DATETIME NULL,
+            result JSON NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_pending (campaign_id, status, next_attempt_at)
+        )""",
+        """CREATE TABLE IF NOT EXISTS voice_call_logs (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            contact_id INT NOT NULL,
+            channel_id VARCHAR(100) NULL,
+            started_at DATETIME NULL,
+            answered_at DATETIME NULL,
+            ended_at DATETIME NULL,
+            duration_seconds INT NULL,
+            disposition VARCHAR(50) NULL,
+            transcript TEXT NULL,
+            summary JSON NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )""",
     ]
     with engine.connect() as conn:
         for sql in migrations:
@@ -145,6 +193,7 @@ app.include_router(system.router,      prefix="/api/system",      tags=["system"
 app.include_router(users.router,       prefix="/api/users",       tags=["users"])
 app.include_router(ari.router,         prefix="/api/ari",         tags=["ari"])
 app.include_router(monitor.router,     prefix="/api/monitor",     tags=["monitor"])
+app.include_router(campaigns.router,   prefix="/api/campaigns",   tags=["campaigns"])
 
 
 @app.on_event("startup")

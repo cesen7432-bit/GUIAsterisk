@@ -1,4 +1,4 @@
-export function FormField({ label, error, children, required }) {
+export function FormField({ label, error, hint, children, required }) {
   return (
     <div className="space-y-1">
       {label && (
@@ -8,6 +8,7 @@ export function FormField({ label, error, children, required }) {
         </label>
       )}
       {children}
+      {hint && <p className="text-xs text-gray-400">{hint}</p>}
       {error && <p className="text-xs text-red-600">{error}</p>}
     </div>
   )
