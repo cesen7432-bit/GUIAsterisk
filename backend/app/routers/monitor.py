@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends
 from ..auth import get_current_user
 from ..services.ami_client import ami_client
 from ..services.ari_client import ari_client
+from ..services.call_tracker import call_tracker
 
 router = APIRouter()
 
@@ -14,6 +15,12 @@ async def active_channels(_=Depends(get_current_user)):
         return {"channels": channels, "count": len(channels)}
     except Exception as e:
         return {"channels": [], "count": 0, "error": str(e)}
+
+
+@router.get("/calls")
+async def tracked_calls(_=Depends(get_current_user)):
+    """Llamadas en curso con su último estado (snapshot para cargar la vista)."""
+    return {"calls": call_tracker.active_calls()}
 
 
 @router.get("/endpoints")

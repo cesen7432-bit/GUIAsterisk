@@ -2,19 +2,39 @@
 import asyncio
 import contextlib
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from .ari import ARIClient
+from .ari import ORIGINATE_TIMEOUT, ARIClient
 from .db import VoiceCallLog, VoiceContact, get_session
-from .openai_bridge import run_audio_bridge
+from .local_bridge import run_audio_bridge
 from .port_pool import PortPool
 
 logger = logging.getLogger(__name__)
 
-# Timeout de ring (segundos antes de rendirse)
-RING_TIMEOUT = 35
+# Timeout de ring local: margen sobre el de Asterisk para recibir su causa de cuelgue
+RING_TIMEOUT = ORIGINATE_TIMEOUT + 10
 # Duración máxima de conversación
 MAX_CALL_SECONDS = 600
+
+# Causas Q.850 que Asterisk reporta en ChannelDestroyed
+CAUSE_REJECTED = {17, 21}            # usuario ocupado (rechazo en GSM) / llamada rechazada
+CAUSE_NO_ANSWER = {18, 19}           # sin respuesta del usuario / timbró sin contestar
+CAUSE_UNAVAILABLE = {20, 27, 31, 34, 38, 41, 42}  # apagado, fuera de servicio, congestión
+CAUSE_INVALID = {1, 3, 22, 28}       # número inexistente / mal formado
+
+# Estados de contacto que se reintentan
+RETRYABLE = {"no_answer", "rejected"}
+
+
+@dataclass
+class RingResult:
+    answered_at: datetime | None = None
+    cause: int = 0
+    cause_txt: str = ""
+    rang: bool = False
+    ring_seconds: int = 0
+    timed_out: bool = False
 
 
 async def run_call_session(
@@ -60,15 +80,26 @@ async def run_call_session(
         event_q = ari.event_router.subscribe(channel_id)
 
         try:
-            answered_at = await _wait_for_answer(event_q)
+            ring = await _wait_for_answer(event_q)
         finally:
             ari.event_router.unsubscribe(channel_id)
 
+        answered_at = ring.answered_at
         if answered_at is None:
-            # No contestó
-            logger.info(f"[{contact_id}] Sin respuesta → {phone}")
-            _update_contact(contact_id, "no_answer", max_retries, retry_delay_minutes)
-            _update_log(log_id, ended_at=datetime.utcnow(), disposition="no_answer")
+            disposition, contact_status = _classify_unanswered(ring)
+            logger.info(
+                f"[{contact_id}] No contestada ({disposition}) → {phone} "
+                f"causa={ring.cause} {ring.cause_txt!r} timbró={ring.ring_seconds}s"
+            )
+            _update_contact(contact_id, contact_status, max_retries, retry_delay_minutes)
+            _update_log(
+                log_id, ended_at=datetime.utcnow(), disposition=disposition,
+                summary={
+                    "hangup_cause": ring.cause,
+                    "hangup_cause_txt": ring.cause_txt,
+                    "ring_seconds": ring.ring_seconds,
+                },
+            )
             return
 
         logger.info(f"[{contact_id}] Contestó {phone} a las {answered_at}")
@@ -163,8 +194,10 @@ async def run_call_session(
             await port_pool.release(rtp_port)
 
 
-async def _wait_for_answer(event_q: asyncio.Queue) -> datetime | None:
-    """Espera ChannelStateChange:Up. Devuelve hora de respuesta o None si timeout/cuelgue."""
+async def _wait_for_answer(event_q: asyncio.Queue) -> RingResult:
+    """Espera ChannelStateChange:Up. Si no contesta, devuelve la causa de cuelgue y cuánto timbró."""
+    res = RingResult()
+    ring_start = None
     try:
         async with asyncio.timeout(RING_TIMEOUT):
             while True:
@@ -173,11 +206,42 @@ async def _wait_for_answer(event_q: asyncio.Queue) -> datetime | None:
                 if etype == "ChannelStateChange":
                     state = event.get("channel", {}).get("state", "")
                     if state == "Up":
-                        return datetime.utcnow()
-                elif etype in ("ChannelDestroyed", "ChannelHangupRequest"):
-                    return None
+                        res.answered_at = datetime.utcnow()
+                        break
+                    if state == "Ringing" and ring_start is None:
+                        ring_start = datetime.utcnow()
+                        res.rang = True
+                elif etype == "ChannelHangupRequest":
+                    # Guardar la causa, pero esperar ChannelDestroyed que trae la definitiva
+                    if event.get("cause"):
+                        res.cause = event["cause"]
+                elif etype == "ChannelDestroyed":
+                    res.cause = event.get("cause") or res.cause
+                    res.cause_txt = event.get("cause_txt", "")
+                    break
     except (asyncio.TimeoutError, TimeoutError):
-        return None
+        res.timed_out = True
+    if ring_start:
+        res.ring_seconds = int((datetime.utcnow() - ring_start).total_seconds())
+    return res
+
+
+def _classify_unanswered(ring: RingResult) -> tuple[str, str]:
+    """Devuelve (disposition del log, status del contacto) para una llamada no contestada."""
+    if ring.cause in CAUSE_REJECTED:
+        return "rejected", "rejected"
+    if ring.cause in CAUSE_NO_ANSWER or ring.timed_out:
+        return "no_answer", "no_answer"
+    if ring.cause in CAUSE_UNAVAILABLE:
+        return "unavailable", "no_answer"
+    if ring.cause in CAUSE_INVALID:
+        return "invalid_number", "failed"
+    # Causa genérica (16 normal / 0): decidir por cuánto timbró
+    if ring.rang and ring.ring_seconds < ORIGINATE_TIMEOUT - 3:
+        return "rejected", "rejected"
+    if ring.rang:
+        return "no_answer", "no_answer"
+    return "unavailable", "no_answer"
 
 
 def _update_contact(contact_id: int, status: str, max_retries: int, retry_delay: int):
@@ -185,7 +249,7 @@ def _update_contact(contact_id: int, status: str, max_retries: int, retry_delay:
         c = db.query(VoiceContact).get(contact_id)
         if not c:
             return
-        if status == "no_answer" and c.attempts < max_retries:
+        if status in RETRYABLE and c.attempts < max_retries:
             c.status = "pending"
             c.next_attempt_at = datetime.utcnow() + timedelta(minutes=retry_delay)
         else:

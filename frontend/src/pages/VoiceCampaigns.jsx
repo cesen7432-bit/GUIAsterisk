@@ -29,7 +29,18 @@ const CONTACT_COLORS = {
   completed: 'green',
   voicemail: 'yellow',
   no_answer: 'red',
+  rejected:  'purple',
   failed:    'red',
+}
+const DISPOSITION_LABELS = {
+  completado:     ['Completada', 'green'],
+  voicemail:      ['Buzón de voz', 'yellow'],
+  rechazado:      ['Rechazó (en llamada)', 'purple'],
+  rejected:       ['Cortó / rechazó', 'purple'],
+  no_answer:      ['Timbró sin contestar', 'red'],
+  unavailable:    ['Apagado / no disponible', 'gray'],
+  invalid_number: ['Número inválido', 'gray'],
+  error:          ['Error', 'red'],
 }
 
 const fmtDate = d => d ? new Date(d).toLocaleString('es-EC') : '—'
@@ -142,7 +153,7 @@ function CampaignDetail({ campaign, onClose }) {
   const contacts = contactsData?.items || []
   const total    = contactsData?.total ?? 0
 
-  const STATUSES = ['', 'pending', 'calling', 'completed', 'voicemail', 'no_answer', 'failed']
+  const STATUSES = ['', 'pending', 'calling', 'completed', 'voicemail', 'no_answer', 'rejected', 'failed']
 
   return (
     <Modal open onClose={onClose} title={`Campaña: ${campaign.name}`} size="xl">
@@ -269,12 +280,15 @@ function CampaignDetail({ campaign, onClose }) {
                   <Td><span className="text-xs">{fmtDate(log.started_at)}</span></Td>
                   <Td><span className="font-mono text-xs">{fmtDur(log.duration_seconds)}</span></Td>
                   <Td>
-                    <Badge variant={
-                      log.disposition === 'completado' ? 'green'
-                      : log.disposition === 'voicemail' ? 'yellow'
-                      : log.disposition === 'no_answer' ? 'red'
-                      : 'gray'
-                    }>{log.disposition || '—'}</Badge>
+                    <Badge variant={DISPOSITION_LABELS[log.disposition]?.[1] || 'gray'}>
+                      {DISPOSITION_LABELS[log.disposition]?.[0] || log.disposition || '—'}
+                    </Badge>
+                    {log.summary?.hangup_cause != null && (
+                      <span className="block mt-1 text-[11px] text-gray-400">
+                        Causa {log.summary.hangup_cause}{log.summary.hangup_cause_txt ? ` · ${log.summary.hangup_cause_txt}` : ''}
+                        {log.summary.ring_seconds ? ` · timbró ${log.summary.ring_seconds}s` : ''}
+                      </span>
+                    )}
                   </Td>
                   <Td>
                     {log.transcript

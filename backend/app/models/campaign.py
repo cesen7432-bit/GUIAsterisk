@@ -36,7 +36,7 @@ class VoiceContact(Base):
     phone = Column(String(30), nullable=False)
     variables = Column(JSON, nullable=False, default=dict)
     status = Column(
-        Enum("pending", "calling", "completed", "voicemail", "no_answer", "failed"),
+        Enum("pending", "calling", "completed", "voicemail", "no_answer", "rejected", "failed"),
         default="pending",
     )
     attempts = Column(Integer, default=0)

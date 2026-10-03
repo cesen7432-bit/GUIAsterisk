@@ -20,7 +20,12 @@ class Settings(BaseSettings):
     rtp_port_start: int = 10000
     rtp_port_end: int = 10100
 
-    openai_api_key: str = ""
+    # ── Pipeline local ──────────────────────────────────────────────────────
+    ollama_host: str = "ollama"
+    ollama_model: str = "llama3.2:3b"
+    whisper_model: str = "small"
+    piper_binary: str = "/usr/local/bin/piper"
+    piper_model_path: str = "/app/models/es_ES-mls_10246-low.onnx"
 
     class Config:
         env_file = ".env"

@@ -11,6 +11,9 @@ from .config import settings
 
 logger = logging.getLogger(__name__)
 
+# Segundos que Asterisk deja timbrar antes de abandonar la llamada saliente
+ORIGINATE_TIMEOUT = 35
+
 
 class EventRouter:
     """Distribuye eventos ARI a colas asyncio por channel_id."""
@@ -83,7 +86,7 @@ class ARIClient:
                 "app": settings.ari_app,
                 "appArgs": "outbound",
                 "callerId": "Empresa",
-                "timeout": 35,
+                "timeout": ORIGINATE_TIMEOUT,
             },
         ) as r:
             r.raise_for_status()

@@ -13,6 +13,7 @@ from .routers import system, users, voicemail
 from .routers import trunks, campaigns
 from .services.ami_client import ami_client
 from .services.ari_client import ari_client
+from .services.call_tracker import call_tracker
 from .services.websocket_manager import ws_manager
 
 logging.basicConfig(level=logging.INFO)
@@ -51,7 +52,7 @@ def _run_migrations():
             campaign_id INT NOT NULL,
             phone VARCHAR(30) NOT NULL,
             variables JSON NOT NULL,
-            status ENUM('pending','calling','completed','voicemail','no_answer','failed') DEFAULT 'pending',
+            status ENUM('pending','calling','completed','voicemail','no_answer','rejected','failed') DEFAULT 'pending',
             attempts INT DEFAULT 0,
             next_attempt_at DATETIME NULL,
             result JSON NULL,
@@ -72,6 +73,9 @@ def _run_migrations():
             summary JSON NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )""",
+        """ALTER TABLE voice_contacts MODIFY status
+            ENUM('pending','calling','completed','voicemail','no_answer','rejected','failed')
+            DEFAULT 'pending'""",
     ]
     with engine.connect() as conn:
         for sql in migrations:
@@ -214,6 +218,7 @@ async def _ami_loop():
         await ws_manager.broadcast({"source": "ami", "event": event})
 
     ami_client.on_event("*", ami_to_ws)
+    ami_client.on_event("*", call_tracker.handle)
 
     while True:
         if not ami_client.connected:

@@ -12,8 +12,23 @@ function duration(secs) {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
+const CALL_STATES = {
+  dialing:     ['Marcando', 'blue'],
+  ringing:     ['Timbrando', 'yellow'],
+  answered:    ['En conversación', 'green'],
+  completed:   ['Completada', 'green'],
+  rejected:    ['Cortó / rechazó', 'purple'],
+  busy:        ['Ocupado', 'purple'],
+  no_answer:   ['No contestó', 'red'],
+  cancelled:   ['Cancelada por quien llamó', 'gray'],
+  unavailable: ['No disponible', 'gray'],
+  failed:      ['Falló', 'red'],
+  voicemail:   ['Buzón de voz', 'yellow'],
+}
+
 export default function Monitor() {
   const [events, setEvents] = useState([])
+  const [calls, setCalls] = useState([])
   const [transferModal, setTransferModal] = useState(null)
   const [transferTo, setTransferTo] = useState('')
 
@@ -30,6 +45,11 @@ export default function Monitor() {
   })
 
   useWebSocket(useCallback((msg) => {
+    if (msg.source === 'call') {
+      const ev = msg.event
+      setCalls(prev => [ev, ...prev.filter(c => c.call_id !== ev.call_id)].slice(0, 20))
+      return
+    }
     if (msg.source === 'ari' || msg.source === 'ami') {
       setEvents(prev => [{ ...msg, ts: new Date().toLocaleTimeString() }, ...prev.slice(0, 49)])
       if (['StasisStart', 'StasisEnd', 'ChannelStateChange', 'Hangup', 'Newchannel'].includes(
@@ -70,6 +90,34 @@ export default function Monitor() {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        {/* Call states */}
+        <div className="xl:col-span-3 card">
+          <h3 className="font-semibold text-gray-900 mb-4">Estado de llamadas</h3>
+          {calls.length === 0 ? (
+            <p className="text-gray-400 text-sm">Sin llamadas recientes</p>
+          ) : (
+            <div className="space-y-1">
+              {calls.map(c => {
+                const key = c.state === 'ended' ? c.result : c.state
+                const [label, color] = CALL_STATES[key] || [key, 'gray']
+                return (
+                  <div key={c.call_id} className="flex items-center justify-between text-sm py-1.5 border-b border-gray-50">
+                    <span className="font-mono">{c.from} → {c.to}</span>
+                    <div className="flex items-center gap-3">
+                      {c.state === 'ended' && (
+                        <span className="text-xs text-gray-400">
+                          {duration(c.talk_seconds || 0)} · causa {c.cause} {c.cause_txt}
+                        </span>
+                      )}
+                      <Badge variant={color} dot={c.state !== 'ended'}>{label}{c.state === 'ended' ? ' (finalizada)' : ''}</Badge>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
         {/* Active channels */}
         <div className="xl:col-span-2 card">
           <h3 className="font-semibold text-gray-900 mb-4">Llamadas activas</h3>
