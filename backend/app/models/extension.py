@@ -19,6 +19,8 @@ class Extension(Base):
     followme_enabled = Column(Boolean, default=False)
     blacklist_enabled = Column(Boolean, default=False)
     language = Column(String(10), default="es")
+    # keys de services/feature_codes.py separadas por coma; NULL = valores por defecto
+    feature_codes = Column(String(500), nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

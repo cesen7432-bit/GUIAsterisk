@@ -55,6 +55,7 @@ def _db_action(action: str, family: str, key: str, val: str = "") -> bool:
 
 def reload_pjsip():       return _send("module reload res_pjsip")
 def reload_dialplan():    return _send("dialplan reload")
+def reload_features():    return _send("module reload features")
 def reload_queues():      return _send("module reload app_queue")
 def reload_voicemail():   return _send("module reload app_voicemail")
 def reload_followme():    return _send("module reload app_followme")

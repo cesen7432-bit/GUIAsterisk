@@ -25,6 +25,7 @@ Base.metadata.create_all(bind=engine)
 def _run_migrations():
     migrations = [
         "ALTER TABLE trunks ADD COLUMN nat_ip VARCHAR(200) NULL",
+        "ALTER TABLE extensions ADD COLUMN feature_codes VARCHAR(500) NULL",
         """CREATE TABLE IF NOT EXISTS voice_templates (
             id INT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(200) NOT NULL,

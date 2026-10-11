@@ -11,15 +11,18 @@ import { FormField, Input, Select, Checkbox } from '../components/UI/FormField'
 
 const STATUS_COLORS = { registered: 'green', unregistered: 'gray', unavailable: 'red', busy: 'yellow' }
 
-function ExtensionForm({ initial, onSubmit, loading }) {
+function ExtensionForm({ initial, featureCodes = [], onSubmit, loading }) {
   const { register, handleSubmit, formState: { errors } } = useForm({ defaultValues: initial || {
     type: 'sip', context: 'from-internal', codecs: 'ulaw,alaw',
     recording: 'never', language: 'es',
     voicemail_enabled: false, followme_enabled: false, blacklist_enabled: false,
+    feature_codes: featureCodes.filter(fc => fc.default).map(fc => fc.key),
   }})
 
+  const submit = (data) => onSubmit({ ...data, feature_codes: data.feature_codes || [] })
+
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+    <form onSubmit={handleSubmit(submit)} className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
         <FormField label="Número" required error={errors.number?.message}>
           <input className="input" {...register('number', { required: 'Requerido' })} placeholder="100" />
@@ -70,6 +73,23 @@ function ExtensionForm({ initial, onSubmit, loading }) {
           Lista negra personal
         </label>
       </div>
+      {featureCodes.length > 0 && (
+        <div>
+          <p className="text-sm font-medium text-gray-700 mb-2">Códigos especiales</p>
+          <div className="grid grid-cols-2 gap-2">
+            {featureCodes.map(fc => (
+              <label key={fc.key} className="flex items-start gap-2 cursor-pointer text-sm p-2 rounded border border-gray-200 hover:bg-gray-50">
+                <input type="checkbox" value={fc.key} {...register('feature_codes')} className="rounded mt-0.5" />
+                <span>
+                  <span className="font-mono font-bold text-blue-700 mr-1.5">{fc.label}</span>
+                  {fc.name}
+                  <span className="block text-xs text-gray-500">{fc.description}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="flex justify-end gap-3 pt-2">
         <button type="submit" className="btn-primary" disabled={loading}>
           {loading ? 'Guardando...' : 'Guardar'}
@@ -88,6 +108,13 @@ export default function Extensions() {
     queryFn: () => api.get('/extensions/').then(r => r.data),
     refetchInterval: 10000,
   })
+
+  const { data: featureCodes = [] } = useQuery({
+    queryKey: ['feature-codes'],
+    queryFn: () => api.get('/extensions/feature-codes').then(r => r.data),
+    staleTime: Infinity,
+  })
+  const codeOf = Object.fromEntries(featureCodes.map(fc => [fc.key, fc.label]))
 
   const createMut = useMutation({
     mutationFn: (data) => api.post('/extensions/', data),
@@ -128,9 +155,12 @@ export default function Extensions() {
             <Td><span className="text-xs text-gray-500">{ext.codecs}</span></Td>
             <Td><Badge variant={ext.recording === 'always' ? 'red' : ext.recording === 'ondemand' ? 'yellow' : 'gray'}>{ext.recording}</Badge></Td>
             <Td>
-              <div className="flex gap-1">
+              <div className="flex flex-wrap gap-1">
                 {ext.voicemail_enabled && <Badge variant="blue" dot>VM</Badge>}
                 {ext.followme_enabled && <Badge variant="purple" dot>FM</Badge>}
+                {ext.feature_codes?.map(k => codeOf[k] && (
+                  <Badge key={k} variant="gray">{codeOf[k]}</Badge>
+                ))}
               </div>
             </Td>
             <Td>
@@ -150,6 +180,7 @@ export default function Extensions() {
 
       <Modal open={modal === 'create'} onClose={() => setModal(null)} title="Nueva extensión">
         <ExtensionForm
+          featureCodes={featureCodes}
           onSubmit={(data) => createMut.mutate(data)}
           loading={createMut.isPending}
         />
@@ -159,6 +190,7 @@ export default function Extensions() {
         {modal?.edit && (
           <ExtensionForm
             initial={modal.edit}
+            featureCodes={featureCodes}
             onSubmit={(data) => updateMut.mutate({ id: modal.edit.id, data })}
             loading={updateMut.isPending}
           />

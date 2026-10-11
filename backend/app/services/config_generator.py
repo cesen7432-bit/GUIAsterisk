@@ -15,6 +15,7 @@ from ..models.route import InboundRoute, OutboundRoute
 from ..models.schedule import Schedule
 from ..models.trunk import Trunk
 from ..models.voicemail import Voicemail
+from . import feature_codes
 
 logger = logging.getLogger(__name__)
 CFG = settings.asterisk_config_path
@@ -35,9 +36,10 @@ def _write(filename: str, content: str):
     logger.info(f"Written: {filename}")
 
 
-def _dest(dest_type: str, dest_id: str) -> str:
+def _dest(dest_type: str, dest_id: str, xfer_exts: frozenset = frozenset()) -> str:
     if dest_type == "extension":
-        return f"Dial(PJSIP/{dest_id},30,rT)"
+        # t = la extensión que contesta puede transferir; nunca T (sería el llamante externo)
+        return f"Dial(PJSIP/{dest_id},30,r{'t' if dest_id in xfer_exts else ''})"
     if dest_type == "queue":
         return f"Queue({dest_id},t,,60)"
     if dest_type == "ivr":
@@ -45,6 +47,18 @@ def _dest(dest_type: str, dest_id: str) -> str:
     if dest_type == "voicemail":
         return f"VoiceMail({dest_id}@default,u)"
     return "Hangup()"
+
+
+def _can_transfer(ext: Extension) -> bool:
+    return "transfer" in feature_codes.parse(ext.feature_codes)
+
+
+def _transfer_opts(ext: Extension) -> list:
+    # allow_transfer → botón Transferir del teléfono (SIP REFER)
+    # XFER_OPT → habilita ## / *2 a quien llama (opción T de Dial) desde esta extensión
+    if _can_transfer(ext):
+        return ["allow_transfer=yes", "set_var=XFER_OPT=T"]
+    return ["allow_transfer=no"]
 
 
 # ─── pjsip.conf ──────────────────────────────────────────────────────────────
@@ -86,7 +100,7 @@ def gen_pjsip(db: Session) -> str:
             lines += [
                 f"[{ext.number}]",
                 "type=endpoint",
-                "context=from-internal",
+                f"context=ext-{ext.number}",
                 "disallow=all",
             ] + [f"allow={c}" for c in codecs] + [
                 f"auth={ext.number}-auth",
@@ -105,6 +119,7 @@ def gen_pjsip(db: Session) -> str:
                 "direct_media=no",
                 f"callerid={cid} <{ext.number}>",
                 f"language={ext.language}",
+            ] + _transfer_opts(ext) + [
                 "",
                 f"[{ext.number}-auth]",
                 "type=auth",
@@ -123,7 +138,7 @@ def gen_pjsip(db: Session) -> str:
             lines += [
                 f"[{ext.number}]",
                 "type=endpoint",
-                "context=from-internal",
+                f"context=ext-{ext.number}",
                 "disallow=all",
             ] + [f"allow={c}" for c in codecs] + [
                 f"auth={ext.number}-auth",
@@ -134,6 +149,7 @@ def gen_pjsip(db: Session) -> str:
                 "direct_media=no",
                 f"callerid={cid} <{ext.number}>",
                 f"language={ext.language}",
+            ] + _transfer_opts(ext) + [
                 "",
                 f"[{ext.number}-auth]",
                 "type=auth",
@@ -243,6 +259,10 @@ def gen_extensions(db: Session) -> str:
     ]
 
     trunks_map = {t.id: t for t in db.query(Trunk).all()}
+    xfer_exts = frozenset(
+        e.number for e in db.query(Extension).filter(Extension.is_active == True).all()
+        if _can_transfer(e)
+    )
 
     for ext in db.query(Extension).filter(Extension.is_active == True).all():
         lines.append(f"exten => {ext.number},1,NoOp(Llamada a {ext.number})")
@@ -255,7 +275,8 @@ def gen_extensions(db: Session) -> str:
         if ext.followme_enabled:
             lines.append(f" same => n,FollowMe({ext.number})")
         else:
-            lines.append(f" same => n,Dial(PJSIP/{ext.number},30,rT)")
+            callee_xfer = "t" if _can_transfer(ext) else ""
+            lines.append(f" same => n,Dial(PJSIP/{ext.number},30,r{callee_xfer}${{XFER_OPT}})")
         if ext.voicemail_enabled:
             lines.append(f" same => n,VoiceMail({ext.number}@default,u)")
         lines.append(f" same => n,Hangup()")
@@ -281,16 +302,11 @@ def gen_extensions(db: Session) -> str:
                 f" same => n,MixMonitor(/var/spool/asterisk/monitor/"
                 f"${{STRFTIME(${{EPOCH}},,%Y%m%d-%H%M%S)}}-${{CALLERID(num)}}-out.wav,b)"
             )
-        lines.append(f" same => n,Dial(PJSIP/${{EXTEN}}@{trunk.name},60,rT)")
+        lines.append(f" same => n,Dial(PJSIP/${{EXTEN}}@{trunk.name},60,r${{XFER_OPT}})")
         lines.append(f" same => n,Hangup()")
         lines.append("")
 
     lines += [
-        "exten => 700,1,Park()",
-        "",
-        "exten => *97,1,VoiceMailMain(${CALLERID(num)}@default)",
-        " same => n,Hangup()",
-        "",
         "exten => blacklisted,1,Answer()",
         " same => n,Playback(ss-noservice)",
         " same => n,Hangup()",
@@ -300,6 +316,27 @@ def gen_extensions(db: Session) -> str:
         "exten => t,1,Playback(vm-goodbye)",
         " same => n,Hangup()",
         "",
+    ]
+
+    # Contexto propio por extensión: códigos especiales habilitados + from-internal.
+    # Los deshabilitados se bloquean explícitamente para que no caigan en rutas salientes.
+    for ext in db.query(Extension).filter(Extension.is_active == True).all():
+        enabled = set(feature_codes.parse(ext.feature_codes))
+        lines.append(f"[ext-{ext.number}]")
+        for fc in feature_codes.DIALED_CODES:
+            if fc["key"] in enabled:
+                lines.append(f"exten => {feature_codes.exten(fc)},1,NoOp(Codigo especial {fc['key']})")
+                lines += [f" same => n,{app}" for app in fc["dialplan"]]
+                lines.append(" same => n,Hangup()")
+            else:
+                lines.append(f"exten => {feature_codes.exten(fc)},1,NoOp(Codigo especial {fc['key']} deshabilitado)")
+                lines.append(" same => n,Answer()")
+                lines.append(" same => n,Playback(ss-noservice)")
+                lines.append(" same => n,Hangup()")
+        lines.append("include => from-internal")
+        lines.append("")
+
+    lines += [
         "[from-trunk]",
         "exten => s,1,NoOp(Llamada entrante de ${CALLERID(num)})",
         " same => n,Answer()",
@@ -317,7 +354,7 @@ def gen_extensions(db: Session) -> str:
     for r in db.query(InboundRoute).all():
         pattern = r.did if r.did else "_."
         lines.append(f"exten => {pattern},1,NoOp(DID {r.did})")
-        lines.append(f" same => n,{_dest(r.destination_type, r.destination_id)}")
+        lines.append(f" same => n,{_dest(r.destination_type, r.destination_id, xfer_exts)}")
         lines.append(f" same => n,Hangup()")
         lines.append("")
     lines += ["exten => _.,1,Answer()", " same => n,Hangup()", ""]
@@ -331,7 +368,7 @@ def gen_extensions(db: Session) -> str:
         lines.append(f" same => n,WaitExten({ivr.timeout})")
         lines.append("")
         for opt in ivr.options:
-            lines.append(f"exten => {opt.key},1,{_dest(opt.destination_type, opt.destination_id)}")
+            lines.append(f"exten => {opt.key},1,{_dest(opt.destination_type, opt.destination_id, xfer_exts)}")
             lines.append(f" same => n,Hangup()")
             lines.append("")
         lines.append("exten => i,1,Playback(invalid)")
@@ -436,6 +473,24 @@ def gen_followme(db: Session) -> str:
     return "\n".join(lines)
 
 
+# ─── features.conf ───────────────────────────────────────────────────────────
+
+def gen_features(db: Session) -> str:
+    # Los códigos solo funcionan si Dial lleva t/T, que se decide por extensión
+    return "\n".join([
+        _header("features.conf"),
+        "[general]",
+        "transferdigittimeout=3",
+        "atxfernoanswertimeout=15",
+        "atxferdropcall=no",
+        "",
+        "[featuremap]",
+        "blindxfer => ##",
+        "atxfer => *2",
+        "",
+    ])
+
+
 # ─── ari.conf ────────────────────────────────────────────────────────────────
 
 def gen_ari(db: Session) -> str:
@@ -461,6 +516,7 @@ def generate_all(db: Session):
         ("queues.conf", gen_queues),
         ("voicemail.conf", gen_voicemail),
         ("followme.conf", gen_followme),
+        ("features.conf", gen_features),
         ("ari.conf", gen_ari),
     ]:
         try:

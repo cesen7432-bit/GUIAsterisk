@@ -8,7 +8,7 @@ from ..auth import get_current_user, require_admin
 from ..database import get_db
 from ..models.trunk import Trunk
 from ..services import ami_reload
-from ..services.config_generator import gen_pjsip, _write
+from ..services.config_generator import gen_pjsip, gen_extensions, _write
 
 router = APIRouter()
 
@@ -44,7 +44,10 @@ class TrunkUpdate(BaseModel):
 
 def _reload(db: Session):
     _write("pjsip.conf", gen_pjsip(db))
+    # los endpoints apuntan a contextos ext-<número> que viven en extensions.conf
+    _write("extensions.conf", gen_extensions(db))
     ami_reload.reload_pjsip()
+    ami_reload.reload_dialplan()
 
 
 @router.get("/")
