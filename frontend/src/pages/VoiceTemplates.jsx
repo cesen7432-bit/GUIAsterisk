@@ -19,7 +19,7 @@ const VOICES = [
 ]
 
 const HINT = `Usa {{variable}} para datos dinámicos.
-Ejemplo: Hola {{nombre}}, tienes un saldo de ${{monto}} pendiente.
+Ejemplo: Hola {{nombre}}, tienes un saldo de \${{monto}} pendiente.
 
 Variables disponibles dependen de las columnas de tu CSV.`
 
