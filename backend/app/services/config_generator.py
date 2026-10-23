@@ -302,7 +302,9 @@ def gen_extensions(db: Session) -> str:
                 f" same => n,MixMonitor(/var/spool/asterisk/monitor/"
                 f"${{STRFTIME(${{EPOCH}},,%Y%m%d-%H%M%S)}}-${{CALLERID(num)}}-out.wav,b)"
             )
-        lines.append(f" same => n,Dial(PJSIP/${{EXTEN}}@{trunk.name},60,r${{XFER_OPT}})")
+        # Sin "r": la opción r genera timbre local y bloquea el early media del trunk,
+        # así se perdían las locuciones de la operadora (buzón, número inexistente).
+        lines.append(f" same => n,Dial(PJSIP/${{EXTEN}}@{trunk.name},60,${{XFER_OPT}})")
         lines.append(f" same => n,Hangup()")
         lines.append("")
 
