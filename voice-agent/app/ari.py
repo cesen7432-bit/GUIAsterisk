@@ -76,22 +76,34 @@ class ARIClient:
                 logger.warning(f"ARI WebSocket desconectado: {e}. Reconectando en 5 s...")
                 await asyncio.sleep(5)
 
-    async def originate(self, phone: str, trunk: str) -> str:
-        """Origina llamada saliente. Devuelve channel_id."""
+    async def create_channel(self, phone: str, trunk: str) -> str:
+        """Crea el canal saliente sin marcar todavía. Devuelve channel_id.
+
+        Separar crear/marcar permite meter el canal en el bridge antes de que timbre,
+        para recibir el early media (mensajes de la operadora/buzón antes del 200 OK)
+        y no perder eventos entre la creación y la suscripción.
+        """
         async with self._session.post(
-            f"{self._base}/channels",
+            f"{self._base}/channels/create",
             auth=self._auth,
             params={
                 "endpoint": f"PJSIP/{phone}@{trunk}",
                 "app": settings.ari_app,
                 "appArgs": "outbound",
-                "callerId": "Empresa",
-                "timeout": ORIGINATE_TIMEOUT,
             },
+            json={"variables": {"CALLERID(name)": "Empresa"}},
         ) as r:
             r.raise_for_status()
             data = await r.json()
             return data["id"]
+
+    async def dial(self, channel_id: str, timeout: int = ORIGINATE_TIMEOUT):
+        async with self._session.post(
+            f"{self._base}/channels/{channel_id}/dial",
+            auth=self._auth,
+            params={"timeout": timeout},
+        ) as r:
+            r.raise_for_status()
 
     async def hangup(self, channel_id: str):
         try:

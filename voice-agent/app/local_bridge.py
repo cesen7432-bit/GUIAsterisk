@@ -30,6 +30,7 @@ _SILENCE_FRAMES   = 20    # 20 × 30 ms = 600 ms → fin de elocución
 _MIN_SPEECH_FRAMES = 4    # mínimo 120 ms de voz antes de empezar a grabar
 _MAX_BUF_SECS     = 20    # descartar audio si supera este límite
 _RTP_CHUNK        = 160   # 20 ms de ulaw 8 kHz → 1 paquete RTP
+_QUEUE_PACKETS    = 3000  # 60 s de audio: cubre el timbrado completo (early media)
 
 # ── Modelos (se inicializan una sola vez) ─────────────────────────────────────
 _whisper: WhisperModel | None = None
@@ -137,10 +138,52 @@ class _RTPProtocol(asyncio.DatagramProtocol):
             self.remote = addr
         payload = rtp_utils.parse(data)
         if payload:
-            try:
-                self._q.put_nowait(payload)
-            except asyncio.QueueFull:
-                pass
+            if self._q.full():
+                # Descartar lo más antiguo: el mensaje de buzón llega al final del timbrado
+                self._q.get_nowait()
+            self._q.put_nowait(payload)
+
+
+class RTPEndpoint:
+    """Socket UDP que recibe el audio de Asterisk desde antes de marcar."""
+
+    def __init__(self, proto: _RTPProtocol, transport: asyncio.DatagramTransport,
+                 queue: asyncio.Queue):
+        self.proto = proto
+        self.transport = transport
+        self.queue = queue
+
+    def drain(self) -> bytes:
+        """Devuelve (y vacía) el audio ulaw acumulado hasta ahora."""
+        chunks = []
+        while not self.queue.empty():
+            chunks.append(self.queue.get_nowait())
+        return b"".join(chunks)
+
+    def close(self):
+        self.transport.close()
+
+
+async def open_rtp(local_port: int) -> RTPEndpoint:
+    loop = asyncio.get_running_loop()
+    q: asyncio.Queue[bytes] = asyncio.Queue(maxsize=_QUEUE_PACKETS)
+    proto = _RTPProtocol(q)
+    transport, _ = await loop.create_datagram_endpoint(
+        lambda: proto, local_addr=("0.0.0.0", local_port)
+    )
+    return RTPEndpoint(proto, transport, q)
+
+
+async def transcribe_early_media(rtp: RTPEndpoint) -> str:
+    """Transcribe el audio recibido antes de contestar (locuciones de operadora/buzón)."""
+    ulaw = rtp.drain()
+    if not ulaw:
+        return ""
+    loop = asyncio.get_running_loop()
+    pcm8 = audioop.ulaw2lin(ulaw, 2)
+    pcm16, _ = audioop.ratecv(pcm8, 2, 1, 8000, _VAD_RATE, None)
+    await loop.run_in_executor(None, _load_whisper)
+    return await loop.run_in_executor(None, _transcribe, pcm16)
 
     def send(self, ulaw_chunk: bytes):
         if self.transport and self.remote:
@@ -166,7 +209,7 @@ async def _emit_audio(proto: _RTPProtocol, ulaw: bytes, stop: asyncio.Event):
 # ── Puente principal ──────────────────────────────────────────────────────────
 
 async def run_audio_bridge(
-    local_port:    int,
+    rtp:           RTPEndpoint,
     system_prompt: str,
     first_message: str,
     voice:         str,          # no usado con Piper — conservado por compatibilidad
@@ -191,12 +234,8 @@ async def run_audio_bridge(
         }
     ]
 
-    # Socket UDP
-    audio_q: asyncio.Queue[bytes] = asyncio.Queue(maxsize=2000)
-    proto = _RTPProtocol(audio_q)
-    udp_t, _ = await loop.create_datagram_endpoint(
-        lambda: proto, local_addr=("0.0.0.0", local_port)
-    )
+    audio_q = rtp.queue
+    proto = rtp.proto
 
     vad = webrtcvad.Vad(int(vad_threshold * 3))  # 0-3 (usamos 0-1 mapeado a 0-3)
 
@@ -233,73 +272,80 @@ async def run_audio_bridge(
             await _emit_audio(proto, ulaw, stop_tts)
             is_talking = False
 
-    try:
-        # Cargar modelos (puede tardar la primera vez)
-        logger.info("Cargando modelos locales...")
-        await loop.run_in_executor(None, _load_whisper)
-        await loop.run_in_executor(None, _load_piper_rate)
+    # Cargar modelos (puede tardar la primera vez)
+    logger.info("Cargando modelos locales...")
+    await loop.run_in_executor(None, _load_whisper)
+    await loop.run_in_executor(None, _load_piper_rate)
 
-        # Saludo inicial (IA habla primero)
-        logger.info(f"  IA→: {first_message!r}")
-        transcript.append(f"IA: {first_message}")
-        history.append({"role": "assistant", "content": first_message})
-        ulaw_hi = await loop.run_in_executor(None, _synthesize, first_message)
-        if ulaw_hi:
-            stop_tts.clear()
-            await _emit_audio(proto, ulaw_hi, stop_tts)
+    # Audio previo a la contestación (early media): si la operadora puso el mensaje
+    # de buzón antes del 200 OK, aquí está; después de contestar solo queda silencio.
+    early_text = await transcribe_early_media(rtp)
+    if early_text:
+        logger.info(f"  Pre-contestación: {early_text!r}")
+        transcript.append(f"Operadora (antes de contestar): {early_text}")
+        history.append({
+            "role": "user",
+            "content": f"[Locución escuchada antes de contestar] {early_text}",
+        })
 
-        # ── Bucle principal ──────────────────────────────────────────────────
-        while not hangup_event.is_set():
+    # Saludo inicial (IA habla primero)
+    logger.info(f"  IA→: {first_message!r}")
+    transcript.append(f"IA: {first_message}")
+    history.append({"role": "assistant", "content": first_message})
+    ulaw_hi = await loop.run_in_executor(None, _synthesize, first_message)
+    if ulaw_hi:
+        stop_tts.clear()
+        await _emit_audio(proto, ulaw_hi, stop_tts)
+
+    # ── Bucle principal ──────────────────────────────────────────────────
+    while not hangup_event.is_set():
+        try:
+            payload = await asyncio.wait_for(audio_q.get(), timeout=1.0)
+        except asyncio.TimeoutError:
+            continue
+
+        # Decodificar ulaw → PCM 16 kHz
+        pcm8  = audioop.ulaw2lin(payload, 2)
+        pcm16, _ = audioop.ratecv(pcm8, 2, 1, 8000, _VAD_RATE, None)
+        vad_buf.extend(pcm16)
+
+        # Procesar en frames de 30 ms
+        while len(vad_buf) >= _VAD_FRAME_BYTES:
+            frame    = bytes(vad_buf[:_VAD_FRAME_BYTES])
+            vad_buf  = vad_buf[_VAD_FRAME_BYTES:]
+
             try:
-                payload = await asyncio.wait_for(audio_q.get(), timeout=1.0)
-            except asyncio.TimeoutError:
-                continue
+                is_speech = vad.is_speech(frame, _VAD_RATE)
+            except Exception:
+                is_speech = False
 
-            # Decodificar ulaw → PCM 16 kHz
-            pcm8  = audioop.ulaw2lin(payload, 2)
-            pcm16, _ = audioop.ratecv(pcm8, 2, 1, 8000, _VAD_RATE, None)
-            vad_buf.extend(pcm16)
+            if is_speech:
+                spk_cnt += 1
+                sil_cnt  = 0
+                if is_talking and spk_cnt >= 3:
+                    stop_tts.set()   # barge-in: el cliente interrumpe
+                if spk_cnt >= _MIN_SPEECH_FRAMES or in_speech:
+                    in_speech = True
+                    spk_buf.extend(frame)
+                    # Evitar buffer infinito
+                    limit = _MAX_BUF_SECS * _VAD_RATE * 2
+                    if len(spk_buf) > limit:
+                        spk_buf = spk_buf[-limit:]
+            else:
+                spk_cnt = 0
+                if in_speech:
+                    sil_cnt += 1
+                    spk_buf.extend(frame)
+                    if sil_cnt >= _SILENCE_FRAMES:
+                        # ── Fin de elocución ─────────────────────────
+                        utterance = bytes(spk_buf)
+                        spk_buf.clear()
+                        sil_cnt   = 0
+                        in_speech = False
 
-            # Procesar en frames de 30 ms
-            while len(vad_buf) >= _VAD_FRAME_BYTES:
-                frame    = bytes(vad_buf[:_VAD_FRAME_BYTES])
-                vad_buf  = vad_buf[_VAD_FRAME_BYTES:]
-
-                try:
-                    is_speech = vad.is_speech(frame, _VAD_RATE)
-                except Exception:
-                    is_speech = False
-
-                if is_speech:
-                    spk_cnt += 1
-                    sil_cnt  = 0
-                    if is_talking and spk_cnt >= 3:
-                        stop_tts.set()   # barge-in: el cliente interrumpe
-                    if spk_cnt >= _MIN_SPEECH_FRAMES or in_speech:
-                        in_speech = True
-                        spk_buf.extend(frame)
-                        # Evitar buffer infinito
-                        limit = _MAX_BUF_SECS * _VAD_RATE * 2
-                        if len(spk_buf) > limit:
-                            spk_buf = spk_buf[-limit:]
-                else:
-                    spk_cnt = 0
-                    if in_speech:
-                        sil_cnt += 1
-                        spk_buf.extend(frame)
-                        if sil_cnt >= _SILENCE_FRAMES:
-                            # ── Fin de elocución ─────────────────────────
-                            utterance = bytes(spk_buf)
-                            spk_buf.clear()
-                            sil_cnt   = 0
-                            in_speech = False
-
-                            text = await loop.run_in_executor(None, _transcribe, utterance)
-                            if text:
-                                await ai_respond(text)
-
-    finally:
-        udp_t.close()
+                        text = await loop.run_in_executor(None, _transcribe, utterance)
+                        if text:
+                            await ai_respond(text)
 
     full_transcript = "\n".join(transcript)
     summary = await _summary(full_transcript)

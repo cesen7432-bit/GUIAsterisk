@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 from .ari import ORIGINATE_TIMEOUT, ARIClient
 from .db import VoiceCallLog, VoiceContact, get_session
-from .local_bridge import run_audio_bridge
+from .local_bridge import open_rtp, run_audio_bridge, transcribe_early_media
 from .port_pool import PortPool
 
 logger = logging.getLogger(__name__)
@@ -56,6 +56,8 @@ async def run_call_session(
     bridge_id = None
     ext_channel_id = None
     rtp_port = None
+    rtp = None
+    event_q = None
 
     started_at = datetime.utcnow()
 
@@ -68,28 +70,37 @@ async def run_call_session(
             db.refresh(log)
             log_id = log.id
 
-        # Originar llamada
-        channel_id = await ari.originate(phone, trunk)
+        # El audio se conecta ANTES de marcar: así el early media (mensaje de buzón,
+        # "número no existe", etc.) que la operadora envía con 183 llega al RTP.
+        rtp_port = await port_pool.acquire()
+        rtp = await open_rtp(rtp_port)
+        ext_ch = await ari.create_external_media(rtp_port)
+        ext_channel_id = ext_ch["id"]
+
+        channel_id = await ari.create_channel(phone, trunk)
+        event_q = ari.event_router.subscribe(channel_id)
+        bridge_id = await ari.create_bridge()
+        await ari.add_to_bridge(bridge_id, channel_id, ext_channel_id)
+
+        await ari.dial(channel_id)
         logger.info(f"[{contact_id}] Originando → {phone} channel={channel_id}")
 
         with get_session() as db:
             db.query(VoiceCallLog).filter_by(id=log_id).update({"channel_id": channel_id})
             db.commit()
 
-        # Suscribir a eventos de este canal
-        event_q = ari.event_router.subscribe(channel_id)
-
-        try:
-            ring = await _wait_for_answer(event_q)
-        finally:
-            ari.event_router.unsubscribe(channel_id)
+        ring = await _wait_for_answer(event_q)
 
         answered_at = ring.answered_at
         if answered_at is None:
             disposition, contact_status = _classify_unanswered(ring)
+            early_text = ""
+            with contextlib.suppress(Exception):
+                early_text = await transcribe_early_media(rtp)
             logger.info(
                 f"[{contact_id}] No contestada ({disposition}) → {phone} "
-                f"causa={ring.cause} {ring.cause_txt!r} timbró={ring.ring_seconds}s"
+                f"causa={ring.cause} {ring.cause_txt!r} timbró={ring.ring_seconds}s "
+                f"early_media={early_text!r}"
             )
             _update_contact(contact_id, contact_status, max_retries, retry_delay_minutes)
             _update_log(
@@ -98,6 +109,7 @@ async def run_call_session(
                     "hangup_cause": ring.cause,
                     "hangup_cause_txt": ring.cause_txt,
                     "ring_seconds": ring.ring_seconds,
+                    "early_media": early_text,
                 },
             )
             return
@@ -105,15 +117,8 @@ async def run_call_session(
         logger.info(f"[{contact_id}] Contestó {phone} a las {answered_at}")
         _update_log(log_id, answered_at=answered_at)
 
-        # Puerto RTP y canal externalMedia
-        rtp_port = await port_pool.acquire()
-        ext_ch = await ari.create_external_media(rtp_port)
-        ext_channel_id = ext_ch["id"]
-        bridge_id = await ari.create_bridge()
-        await ari.add_to_bridge(bridge_id, channel_id, ext_channel_id)
-
-        # Suscribir de nuevo para detectar cuelgue durante la conversación
-        hangup_q = ari.event_router.subscribe(channel_id)
+        # Misma suscripción para detectar cuelgue durante la conversación
+        hangup_q = event_q
         hangup_event = asyncio.Event()
 
         async def _watch_hangup():
@@ -132,7 +137,7 @@ async def run_call_session(
         try:
             transcript, summary = await asyncio.wait_for(
                 run_audio_bridge(
-                    local_port=rtp_port,
+                    rtp=rtp,
                     system_prompt=system_prompt,
                     first_message=first_message,
                     voice=voice,
@@ -146,7 +151,6 @@ async def run_call_session(
             transcript, summary = "", {"resultado": "completado", "resumen": "Duración máxima alcanzada"}
         finally:
             watcher.cancel()
-            ari.event_router.unsubscribe(channel_id)
 
         ended_at = datetime.utcnow()
         duration = int((ended_at - answered_at).total_seconds())
@@ -184,12 +188,19 @@ async def run_call_session(
             db.commit()
 
     finally:
+        if event_q is not None:
+            ari.event_router.unsubscribe(channel_id)
         if channel_id:
             with contextlib.suppress(Exception):
                 await ari.hangup(channel_id)
+        if ext_channel_id:
+            with contextlib.suppress(Exception):
+                await ari.hangup(ext_channel_id)
         if bridge_id:
             with contextlib.suppress(Exception):
                 await ari.destroy_bridge(bridge_id)
+        if rtp is not None:
+            rtp.close()
         if rtp_port is not None:
             await port_pool.release(rtp_port)
 
